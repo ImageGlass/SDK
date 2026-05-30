@@ -1,0 +1,73 @@
+name: Release
+
+# Manually triggered from the Actions tab. Builds the SDK, publishes the
+# package to NuGet.org, and creates a GitHub release with the .nupkg attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 1.2.3 or 1.2.3-rc.1 (no leading 'v')"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub release as a pre-release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # needed to create the git tag and GitHub release
+
+# Never run two releases at once; don't cancel a publish that's in flight.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Only allow releasing from main. Triggering from another branch is skipped.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for Source Link and release-note generation
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore source/ImageGlass.SDK.csproj
+
+      - name: Pack
+        # The csproj sends the .nupkg to ./dist and embeds symbols into the DLL.
+        # GeneratePackageOnBuild=false avoids the build+pack double-run that
+        # otherwise causes NU5026 when packing from a clean tree.
+        run: >
+          dotnet pack source/ImageGlass.SDK.csproj
+          --configuration Release
+          --no-restore
+          -p:Version=${{ inputs.version }}
+          -p:GeneratePackageOnBuild=false
+
+      - name: Push to NuGet.org
+        run: >
+          dotnet nuget push "dist/*.nupkg"
+          --api-key ${{ secrets.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "v${{ inputs.version }}"
+          dist/*.nupkg
+          --target "${{ github.sha }}"
+          --title "v${{ inputs.version }}"
+          --generate-notes
+          ${{ inputs.prerelease && '--prerelease' || '' }}
