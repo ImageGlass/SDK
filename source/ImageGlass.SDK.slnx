@@ -5,6 +5,11 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/samples/">
+    <Project Path="../samples/Base64Codec/Base64Codec.csproj">
+      <Platform Solution="*|Any CPU" Project="x64" />
+      <Platform Solution="*|ARM64" Project="ARM64" />
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
     <Project Path="../samples/ConsoleColorPicker/ConsoleColorPicker.csproj">
       <Platform Solution="*|Any CPU" Project="x64" />
       <Platform Solution="*|ARM64" Project="ARM64" />
