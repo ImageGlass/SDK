@@ -17,7 +17,21 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <PackageId>ImageGlass.SDK</PackageId>
-    <Version>1.0.100266</Version>
+
+    <!--
+      Version drives the NuGet package version (and InformationalVersion) and may
+      be any SemVer string, including a large build number.
+      The value below is only a fallback for LOCAL builds; the release workflow
+      overrides it with -p:Version=... so it is the source of truth at publish time.
+      AssemblyVersion / FileVersion components are 16-bit (each max 65535), so they
+      CANNOT carry a large build number — they are pinned to a stable base here.
+      Passing -p:Version=... leaves these two intact, avoiding CS7034
+      "version string does not conform".
+    -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
     <Authors>Duong Dieu Phap</Authors>
     <Company>ImageGlass</Company>
     <Product>ImageGlass SDK</Product>
