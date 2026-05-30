@@ -19,10 +19,19 @@ public sealed class PixelBuffer : IDisposable
     private readonly MemoryMappedViewAccessor _view;
     private bool _pointerAcquired;
 
+    /// <summary>Buffer width in pixels.</summary>
     public int Width { get; }
+
+    /// <summary>Buffer height in pixels.</summary>
     public int Height { get; }
+
+    /// <summary>Number of bytes per pixel row, including any padding.</summary>
     public int Stride { get; }
+
+    /// <summary>Skia color type name describing the pixel layout (e.g. "Bgra8888").</summary>
     public string ColorType { get; }
+
+    /// <summary>Path of the backing memory-mapped file.</summary>
     public string FilePath { get; }
 
     internal PixelBuffer(string mmfPath, int width, int height, int stride, string colorType)
@@ -67,6 +76,9 @@ public sealed class PixelBuffer : IDisposable
     }
 
 
+    /// <summary>
+    /// Releases the mapped view and the underlying memory-mapped file.
+    /// </summary>
     public void Dispose()
     {
         if (_pointerAcquired)

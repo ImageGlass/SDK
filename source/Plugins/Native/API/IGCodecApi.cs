@@ -36,7 +36,7 @@ public unsafe struct IGCodecApi
     public delegate* unmanaged[Cdecl]<byte*, int, int> CanHandleSignature;
 
     /// <summary>
-    /// Loads metadata for the given file path into <paramref name="outImageInfo"/>.
+    /// Loads metadata for the given file path into <c>outImageInfo</c>.
     /// Signature: <c>IGStatus LoadMetadata(IGStringRef filePath, IGImageInfo* outImageInfo, void* cancellation)</c>.
     /// <para>
     /// <c>cancellation</c> is an opaque token supplied by the host; the plugin should call
@@ -48,7 +48,7 @@ public unsafe struct IGCodecApi
 
     /// <summary>
     /// Decodes a single static raster frame from the file path. The plugin allocates the buffer and
-    /// fills <paramref name="outBuffer"/>; the host releases it via <see cref="FreePixelBuffer"/>.
+    /// fills <c>outBuffer</c>; the host releases it via <see cref="FreePixelBuffer"/>.
     /// <para>
     /// <c>frameIndex</c> selects which frame to decode (0-based). For single-frame
     /// images the host always passes 0; multi-frame plugins must respect this value.
@@ -100,7 +100,7 @@ public unsafe struct IGCodecApi
 
     /// <summary>
     /// Decodes a single animation frame. The plugin allocates the buffer and fills
-    /// <paramref name="outBuffer"/>; the host releases it via the codec's existing
+    /// <c>outBuffer</c>; the host releases it via the codec's existing
     /// <see cref="FreePixelBuffer"/>.
     /// <para>
     /// The buffer MUST hold a fully composed RGBA frame at the full canvas size.

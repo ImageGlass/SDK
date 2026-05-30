@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -13,7 +13,52 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
   </PropertyGroup>
 
+  
+  <!-- NuGet package metadata -->
+  <PropertyGroup>
+    <PackageId>ImageGlass.SDK</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Duong Dieu Phap</Authors>
+    <Company>ImageGlass</Company>
+    <Product>ImageGlass SDK</Product>
+    <Title>ImageGlass SDK</Title>
+    <Description>The official development kit for extending ImageGlass 10. Defines the public contracts for building native in-process image codec plugins (via a versioned C ABI) and out-of-process external tools (over named-pipe IPC). AOT- and trim-compatible.</Description>
+    <Copyright>Copyright (c) 2026 Duong Dieu Phap</Copyright>
+
+    <PackageProjectUrl>https://imageglass.org</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ImageGlass/SDK</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon Condition="Exists('..\icon.png')">icon.png</PackageIcon>
+    <PackageTags>ImageGlass;plugin;codec;image-viewer;sdk;tools;skiasharp</PackageTags>
+    <PackageReleaseNotes>https://github.com/ImageGlass/SDK/releases</PackageReleaseNotes>
+
+    <!-- Build a .nupkg on `dotnet pack`. Symbols ship as a .snupkg for debugging. -->
+    <PackageOutputPath>$(MSBuildProjectDirectory)\..\dist</PackageOutputPath>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Source Link: embed repo metadata so consumers can step into SDK sources. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  
+  <!-- Files packed into the NuGet package (not compiled). -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\icon.png" Pack="true" PackagePath="\" Condition="Exists('..\icon.png')" />
   </ItemGroup>
 </Project>

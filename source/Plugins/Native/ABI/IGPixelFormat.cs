@@ -12,9 +12,18 @@ namespace ImageGlass.SDK.Plugins;
 /// </summary>
 public enum IGPixelFormat : int
 {
+    /// <summary>Unknown or unspecified pixel format.</summary>
     Unknown = 0,
+
+    /// <summary>8 bits per channel, BGRA byte order, unsigned normalized.</summary>
     Bgra8Unorm = 1,
+
+    /// <summary>8 bits per channel, RGBA byte order, unsigned normalized.</summary>
     Rgba8Unorm = 2,
+
+    /// <summary>16 bits per channel, RGBA, unsigned normalized.</summary>
     Rgba16Unorm = 3,
+
+    /// <summary>16-bit half-float per channel, RGBA (used for HDR content).</summary>
     RgbaFloat16 = 4,
 }

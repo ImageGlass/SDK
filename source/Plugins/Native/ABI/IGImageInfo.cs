@@ -14,7 +14,10 @@ namespace ImageGlass.SDK.Plugins;
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct IGImageInfo
 {
+    /// <summary>Image width in pixels.</summary>
     public int Width;
+
+    /// <summary>Image height in pixels.</summary>
     public int Height;
 
     /// <summary>One of <see cref="IGPixelFormat"/>.</summary>

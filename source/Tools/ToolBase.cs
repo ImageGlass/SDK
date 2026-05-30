@@ -170,6 +170,9 @@ public abstract class ToolBase : IDisposable
     #endregion
 
 
+    /// <summary>
+    /// Disconnects from the host and releases the underlying pipe client.
+    /// </summary>
     public virtual void Dispose()
     {
         _client?.Dispose();
