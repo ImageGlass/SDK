@@ -1,15 +1,37 @@
 # ImageGlass SDK
 
-The official development kit for extending **[ImageGlass](https://imageglass.org) 10**. `ImageGlass.SDK` is a single .NET 10 class library that defines the public contracts for the two ways you can extend ImageGlass:
+[![Nuget](https://img.shields.io/nuget/dt/ImageGlass.SDK?color=%2300a8d6&logo=nuget)](https://www.nuget.org/packages/ImageGlass.SDK)
 
-- **Plugins** — native, in-process **image codecs** that teach ImageGlass to decode new image formats. They are loaded directly into the host process through a versioned C ABI.
-- **Tools** — out-of-process **external programs** that ImageGlass launches and drives over a named pipe. Tools observe and manipulate the current photo, selection, viewer, and theme.
 
-The two surfaces are independent — pick the one that matches what you want to build.
+The official development kit for extending **[ImageGlass](https://imageglass.org) 10**. `ImageGlass.SDK` is a single .NET 10 class library that defines the public contracts for the two ways you can extend ImageGlass.
+
+
+## What you can build
+
+| You want to… | Build a… | How it runs |
+| --- | --- | --- |
+| Add support for an **image format ImageGlass can't open** yet (a new or proprietary codec) | **Plugin** | Native, in-process codec loaded through a versioned C ABI |
+| **Add a feature** that reacts to the user — read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe |
+
+A few concrete examples of what the SDK makes possible:
+
+- A codec that decodes a custom or rare image format and renders it like any built-in format — still or animated.
+- A color picker that reports the RGBA value under the user's click.
+- A batch/automation tool that watches photo navigation and runs actions against the current image, selection, or theme.
+
+The two surfaces are independent — pick the one that matches what you want to build. See [Samples](#samples) for working, end-to-end examples of each.
+
 
 ## Installation
 
-Add a reference to `ImageGlass.SDK` in your project (the assembly produced by this repository). The library targets `net10.0` and depends only on [SkiaSharp](https://github.com/mono/SkiaSharp). It is AOT- and trim-compatible, so your plugin or tool can publish with Native AOT.
+Install the package from [NuGet](https://www.nuget.org/packages/ImageGlass.SDK):
+
+```pwsh
+dotnet add package ImageGlass.SDK
+```
+
+The library targets `net10.0` and depends only on [SkiaSharp](https://github.com/mono/SkiaSharp). It is AOT- and trim-compatible, so your plugin or tool can publish with Native AOT.
+
 
 ## Building this repository
 
@@ -21,7 +43,18 @@ dotnet build source/ImageGlass.SDK.slnx
 
 Supported platforms: `x64`, `ARM64`, `AnyCPU`.
 
-## Building a Codec Plugin
+
+## Samples
+
+The [`samples/`](samples/) folder contains complete, runnable projects — the fastest way to see each extension surface end to end. Each sample has its own README with build, install, and registration steps.
+
+| Sample | Surface | What it shows |
+| --- | --- | --- |
+| [Base64Codec](samples/Base64Codec/) | Plugin (codec) | A tiny cross-platform native codec that adds `.b64` support — reads a base64-encoded image, decodes it with SkiaSharp into a 32bpp BGRA buffer, and manages pixel-buffer memory through the ABI. Publishes as a Native AOT shared library. |
+| [ConsoleColorPicker](samples/ConsoleColorPicker/) | Tool | A console tool that connects over the named pipe, reads metadata of the current photo, follows photo navigation, and logs the RGBA value of the pixel the user clicks in the viewer via opt-in pointer events. |
+
+
+## 🟢 Building a Codec Plugin
 
 Plugins run **in-process** and communicate with the host through function-pointer tables (a C ABI), so they can be written in any language that can export a C entry point and produce a native shared library.
 
@@ -54,7 +87,7 @@ Key contracts to honor:
 - **Animation** — decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not perform sub-rect composition or disposal/blend replay, so codecs like GIF/APNG must composite internally.
 - **Cancellation** — long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
 
-## Building a Tool
+## 🟢 Building a Tool
 
 Tools run **out-of-process**. Subclass `ToolBase`, then start it from your program's entry point:
 
@@ -90,7 +123,30 @@ ImageGlass launches the tool with a `--pipe <name>` argument; `RunAsync` connect
 - Real-time pointer/selection/frame events are opt-in via `HostApi.SubscribeEventsAsync`.
 - Register the tool with ImageGlass through an `igconfig.json` entry whose `ToolId` matches your `ToolBase.ToolId`.
 
+### Passing the current file to the tool
+
+In the `Arguments` field of the `igconfig.json` entry you can use the `<file>` macro. ImageGlass replaces it with the **full path of the currently viewed image** when it launches the tool:
+
+```jsonc
+"Tools": [
+  {
+    "ToolId": "Tool_MyTool",
+    "ToolName": "My Tool",
+    "Executable": "C:\\path\\to\\MyTool.exe",
+    "Arguments": "--input \"<file>\"",   // expands to: --input "C:\Photos\my image.png"
+    "IsIntegrated": true,
+    "Hotkeys": ["Alt+1"]
+  }
+]
+```
+
+- **`IsIntegrated`** — `true` makes this an SDK tool: ImageGlass launches the process with the `--pipe <name>` argument and wires up the two-way `HostApi` proxy, so the tool can use `ToolBase`/`HostApi` to talk to the host. Set it `false` (or omit it) for a plain external program that is just launched with its arguments and gets no pipe connection.
+- **`Hotkeys`** — an array of key-combination strings that run the tool when pressed in ImageGlass (e.g. `["Alt+1"]`, `["K"]`). Use an empty array `[]` if you don't want a shortcut.
+
+`<file>` expands to the path **without quotes** — wrap it yourself as `"<file>"` when the path may contain spaces. The expanded value arrives in your tool's `args` (the `string[]` passed to `Main` / `RunAsync`).
+
 Set `EnableDebug = true` and provide a `DebugLog` sink before calling `RunAsync` to trace pipe connection and message dispatch when a tool appears to "do nothing".
+
 
 ## License
 
