@@ -8,7 +8,7 @@ The official development kit for extending **[ImageGlass](https://imageglass.org
 
 ## What you can build
 
-| You want to… | Build a… | How it runs |
+| You want to… | Build… | How it runs |
 | --- | --- | --- |
 | Add support for an **image format ImageGlass can't open** yet (a new or proprietary codec) | **Plugin** | Native, in-process codec loaded through a versioned C ABI |
 | **Add a feature** that reacts to the user — read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe |

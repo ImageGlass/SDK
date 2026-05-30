@@ -17,7 +17,7 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <PackageId>ImageGlass.SDK</PackageId>
-    <Version>1.0.266</Version>
+    <Version>1.0.100266</Version>
     <Authors>Duong Dieu Phap</Authors>
     <Company>ImageGlass</Company>
     <Product>ImageGlass SDK</Product>
@@ -35,10 +35,14 @@
     <PackageTags>ImageGlass;plugin;codec;image-viewer;sdk;tools;skiasharp</PackageTags>
     <PackageReleaseNotes>https://github.com/ImageGlass/SDK/releases</PackageReleaseNotes>
 
-    <!-- Build a .nupkg on `dotnet pack`. Symbols ship as a .snupkg for debugging. -->
     <PackageOutputPath>$(MSBuildProjectDirectory)\..\dist</PackageOutputPath>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!--
+      Embed the portable PDB directly inside the DLL instead of shipping a
+      separate .snupkg.
+    -->
+    <DebugType>embedded</DebugType>
+    <IncludeSymbols>false</IncludeSymbols>
 
     <!-- Source Link: embed repo metadata so consumers can step into SDK sources. -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
