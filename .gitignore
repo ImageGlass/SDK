@@ -56,3 +56,4 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /source/.vs
+/samples/**/.vs

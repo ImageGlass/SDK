@@ -4,6 +4,13 @@
     <Platform Name="ARM64" />
     <Platform Name="x64" />
   </Configurations>
+  <Folder Name="/samples/">
+    <Project Path="../samples/ConsoleColorPicker/ConsoleColorPicker.csproj">
+      <Platform Solution="*|Any CPU" Project="x64" />
+      <Platform Solution="*|ARM64" Project="ARM64" />
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+  </Folder>
   <Project Path="ImageGlass.SDK.csproj">
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />

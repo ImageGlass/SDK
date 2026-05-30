@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>Preview</LangVersion>
+    <Platforms>x64;ARM64</Platforms>
+    <RootNamespace>ConsoleColorPicker</RootNamespace>
+    <AssemblyName>ConsoleColorPicker</AssemblyName>
+
+    <!-- This sample is not part of the ImageGlass app, so skip the host's auto-generated AppBuildInfo.g.cs. -->
+    <GenerateIgAppBuildInfo>false</GenerateIgAppBuildInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\source\ImageGlass.SDK.csproj" />
+  </ItemGroup>
+</Project>

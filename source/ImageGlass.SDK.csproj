@@ -17,7 +17,7 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <PackageId>ImageGlass.SDK</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.266</Version>
     <Authors>Duong Dieu Phap</Authors>
     <Company>ImageGlass</Company>
     <Product>ImageGlass SDK</Product>
