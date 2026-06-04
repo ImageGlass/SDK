@@ -8,10 +8,12 @@ The official development kit for extending **[ImageGlass](https://imageglass.org
 
 ## What you can build
 
-| You want to… | Build… | How it runs |
-| --- | --- | --- |
-| Add support for an **image format ImageGlass can't open** yet (a new or proprietary codec) | **Plugin** | Native, in-process codec loaded through a versioned C ABI |
-| **Add a feature** that reacts to the user — read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe |
+The two extension surfaces are independent — pick the one that matches what you want to build. Each has a step-by-step guide that builds a real sample from scratch.
+
+| You want to… | Build… | How it runs | Step-by-step guide |
+| --- | --- | --- | --- |
+| Add support for an **image format ImageGlass can't open** yet (a new or proprietary codec) | **Plugin** | Native, in-process codec loaded through a versioned C ABI | [Building a Native Codec Plugin](docs/codec-plugin-development.md) → covers the C ABI, decode pipeline, memory ownership, animation, and AOT publishing (builds [Base64Codec](samples/Base64Codec/)) |
+| **Add a feature** that reacts to the user — read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe | [Building an External Tool](docs/tool-development.md) → covers lifecycle hooks, the `HostApi`, real-time events, reading pixels, and registration (builds [ConsoleColorPicker](samples/ConsoleColorPicker/)) |
 
 A few concrete examples of what the SDK makes possible:
 
@@ -19,7 +21,7 @@ A few concrete examples of what the SDK makes possible:
 - A color picker that reports the RGBA value under the user's click.
 - A batch/automation tool that watches photo navigation and runs actions against the current image, selection, or theme.
 
-The two surfaces are independent — pick the one that matches what you want to build. See [Samples](#samples) for working, end-to-end examples of each.
+See [Samples](#samples) for working, end-to-end examples, and the guides above for the full walkthroughs. The sections further down are a quick orientation.
 
 
 ## Installation
@@ -56,6 +58,8 @@ The [`samples/`](samples/) folder contains complete, runnable projects — the f
 
 ## 🟢 Building a Codec Plugin
 
+> 📖 **Full walkthrough:** [docs/codec-plugin-development.md](docs/codec-plugin-development.md) builds the [Base64Codec](samples/Base64Codec/) sample step by step. The summary below is just an orientation.
+
 Plugins run **in-process** and communicate with the host through function-pointer tables (a C ABI), so they can be written in any language that can export a C entry point and produce a native shared library.
 
 A plugin ships as a folder containing the native library plus an `igplugin.json` manifest:
@@ -88,6 +92,8 @@ Key contracts to honor:
 - **Cancellation** — long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
 
 ## 🟢 Building a Tool
+
+> 📖 **Full walkthrough:** [docs/tool-development.md](docs/tool-development.md) builds the [ConsoleColorPicker](samples/ConsoleColorPicker/) sample step by step. The summary below is just an orientation.
 
 Tools run **out-of-process**. Subclass `ToolBase`, then start it from your program's entry point:
 
