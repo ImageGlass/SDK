@@ -91,6 +91,21 @@ Key contracts to honor:
 - **Animation** — decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not perform sub-rect composition or disposal/blend replay, so codecs like GIF/APNG must composite internally.
 - **Cancellation** — long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
 
+### Installing the plugin
+
+After you compile and publish the plugin with Native AOT, copy its **entire output folder**
+into the `_plugins` folder of ImageGlass's config directory:
+
+| Platform | Config directory |
+| --- | --- |
+| Windows | `%LocalAppData%\ImageGlass_10` |
+| Linux | `~/.local/share/ImageGlass_10` |
+| macOS | `/Users/<username>/Library/Application Support/ImageGlass_10` |
+
+Make sure the `igplugin.json` manifest is located inside that folder, for example:
+`configdir/_plugins/my_codec/igplugin.json`. ImageGlass scans `_plugins` on launch,
+discovers the manifest, and loads the codec.
+
 ## 🟢 Building a Tool
 
 > 📖 **Full walkthrough:** [docs/tool-development.md](docs/tool-development.md) builds the [ConsoleColorPicker](samples/ConsoleColorPicker/) sample step by step. The summary below is just an orientation.

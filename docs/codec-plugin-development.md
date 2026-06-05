@@ -579,17 +579,27 @@ The output folder contains `Base64Codec.dll` (or `.so`/`.dylib`), the copied
 
 ## Step 11 — Install and test
 
-Copy the **entire published folder** into the host's plugins directory. On Windows:
+Copy the **entire published folder** into the `_plugins` directory of ImageGlass's
+**config directory**. The config directory depends on your platform:
+
+| Platform | Config directory |
+| --- | --- |
+| Windows | `%LocalAppData%\ImageGlass_10` |
+| Linux | `~/.local/share/ImageGlass_10` |
+| macOS | `/Users/<username>/Library/Application Support/ImageGlass_10` |
+
+The plugin folder goes under `_plugins`, and the `igplugin.json` manifest **must** sit in
+that folder — e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sample on Windows:
 
 ```text
-%LOCALAPPDATA%\ImageGlass_10\_plugins\Base64Codec\
+%LocalAppData%\ImageGlass_10\_plugins\Base64Codec\
+    igplugin.json           # the manifest — must be here
     Base64Codec.dll
-    igplugin.json
     libSkiaSharp.dll        # the native dependency emitted by AOT publish
 ```
 
-On next launch ImageGlass discovers the manifest, loads the DLL, calls `ig_plugin_get_api`,
-and registers `plugin.base64.codec` for `.b64`.
+On next launch ImageGlass scans `_plugins`, discovers the manifest, loads the DLL, calls
+`ig_plugin_get_api`, and registers `plugin.base64.codec` for `.b64`.
 
 Make a test file from any image and open it:
 
