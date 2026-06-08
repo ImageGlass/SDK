@@ -188,7 +188,7 @@ internal static unsafe class IthmbCodecPlugin
 
         // Check file size before reading
         var fileInfo = new FileInfo(path);
-        if (fileInfo.Length > 50L * 1024 * 1024)
+        if (fileInfo.Length > 100L * 1024 * 1024)
         {
             Log(4, $"ITHMB: file too large ({fileInfo.Length} bytes)");
             return IGStatus.DecodeFailed;
