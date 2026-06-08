@@ -7,8 +7,8 @@ Reads Apple .ithmb thumbnail-cache files. Primary path: locate an embedded
 JPEG payload (JFIF/Exif markers) and decode it via SkiaSharp. Secondary
 path: decode known legacy raw thumbnail profiles (RGB565, YUV422, YCbCr420).
 
-Based on the IthmbDecoder reference implementation from ImageGlass PR #2316,
-re-targeted for the ImageGlass v10 native codec plugin ABI.
+Format behavior informed by the IthmbDecoder reference (ImageGlass PR #2316).
+This is a clean-room implementation for the v10 native codec plugin ABI.
 */
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
