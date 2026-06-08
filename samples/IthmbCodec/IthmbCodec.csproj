@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>Preview</LangVersion>
+    <Platforms>x64;ARM64</Platforms>
+
+    <OutputType>Library</OutputType>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <SelfContained>true</SelfContained>
+
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+
+    <AssemblyName>IthmbCodec</AssemblyName>
+    <RootNamespace>IthmbCodec</RootNamespace>
+
+    <GenerateIgAppBuildInfo>false</GenerateIgAppBuildInfo>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\source\ImageGlass.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="igplugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+</Project>
