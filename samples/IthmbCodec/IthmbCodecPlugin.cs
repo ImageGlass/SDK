@@ -131,6 +131,33 @@ internal static unsafe class IthmbCodecPlugin
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int CodecCanHandleSignature(byte* signature, int length)
+    {
+        if (signature == null || length < 8) return 0;
+        int scanLen = Math.Min(length, 256);
+        for (int i = 0; i < scanLen - 4; i++)
+        {
+            if (signature[i] != 0xFF || signature[i + 1] != 0xD8) continue;
+            int window = Math.Min(i + 128, scanLen);
+            for (int j = i + 2; j <= window - JfifMarker.Length; j++)
+            {
+                bool match = true;
+                for (int m = 0; m < JfifMarker.Length; m++)
+                    if (signature[j + m] != JfifMarker[m]) { match = false; break; }
+                if (match) return 1;
+            }
+            for (int j = i + 2; j <= window - ExifMarker.Length; j++)
+            {
+                bool match = true;
+                for (int m = 0; m < ExifMarker.Length; m++)
+                    if (signature[j + m] != ExifMarker[m]) { match = false; break; }
+                if (match) return 1;
+            }
+        }
+        return 0;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static IGStatus CodecLoadMetadata(IGStringRef filePath, IGImageInfo* outInfo, void* cancellation)
     {
         if (outInfo == null) return IGStatus.InvalidArg;
@@ -177,7 +204,7 @@ internal static unsafe class IthmbCodecPlugin
         if (fileBytes.Length < 8) return IGStatus.DecodeFailed;
 
         // Try embedded JPEG path first
-        if (TryFindJpegSlice(fileBytes, out var jpegOffset, out var jpegLength))
+        if (TryFindJpegSlice(fileBytes, out var jpegOffset, out var jpegLength, cancellation))
         {
             return DecodeJpegSlice(fileBytes, jpegOffset, jpegLength, cancellation, outInfo, outBuf);
         }
@@ -194,7 +221,7 @@ internal static unsafe class IthmbCodecPlugin
     }
 
     // ------------------------------ JPEG extraction ------------------------------
-    private static bool TryFindJpegSlice(byte[] data, out long offset, out int length)
+    private static bool TryFindJpegSlice(byte[] data, out int offset, out int length, void* cancellation)
     {
         offset = 0; length = 0;
         // Scan for JPEG SOI marker (FF D8) with JFIF or Exif payload nearby
@@ -207,9 +234,10 @@ internal static unsafe class IthmbCodecPlugin
             int exifOff = IndexOf(data, ExifMarker, i, scanEnd);
             if (jfifOff < 0 && exifOff < 0) continue;
             offset = i;
-            // Find JPEG EOI marker (FF D9)
+            // Find JPEG EOI marker (FF D9), checking cancellation every 64KB
             for (int k = i + 2; k < data.Length - 1; k++)
             {
+                if ((k & 0xFFFF) == 0 && IsCanceled(null)) return false;
                 if (data[k] == 0xFF && data[k + 1] == 0xD9)
                 {
                     length = (k + 2) - i;
@@ -223,7 +251,7 @@ internal static unsafe class IthmbCodecPlugin
         return false;
     }
 
-    private static IGStatus DecodeJpegSlice(byte[] data, long offset, int length,
+    private static IGStatus DecodeJpegSlice(byte[] data, int offset, int length,
         void* cancellation, IGImageInfo* outInfo, IGPixelBuffer* outBuf)
     {
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
@@ -232,7 +260,7 @@ internal static unsafe class IthmbCodecPlugin
         if (offset == 0 && length == data.Length)
             jpegBytes = data;
         else
-            jpegBytes = data[(int)offset..((int)offset + length)];
+            jpegBytes = data[offset..(offset + length)];
 
         using var skData = SKData.CreateCopy(jpegBytes);
         using var codec = SKCodec.Create(skData);
@@ -248,7 +276,7 @@ internal static unsafe class IthmbCodecPlugin
         outInfo->HasAlpha = srcInfo.AlphaType == SKAlphaType.Opaque ? 0 : 1;
         outInfo->HdrTransferFn = (int)IGHdrTransferFn.None;
         outInfo->ColorSpace = (int)IGColorSpace.Srgb;
-        outInfo->Orientation = 1;
+        outInfo->Orientation = ReadExifOrientation(data, offset, length);
         outInfo->FrameCount = 1;
         outInfo->FileSizeBytes = -1;
         outInfo->IccProfileData = null;
@@ -437,6 +465,81 @@ internal static unsafe class IthmbCodecPlugin
         return -1;
     }
 
+    /// <summary>
+    /// Reads the EXIF Orientation tag (0x0112) from a JPEG slice.
+    /// Returns 1-8 on success, or 1 (normal) if not found.
+    /// </summary>
+    private static int ReadExifOrientation(byte[] data, int jpegOffset, int jpegLength)
+    {
+        // EXIF data lives in APP1 marker (FF E1)
+        int end = jpegOffset + jpegLength;
+        for (int i = jpegOffset + 2; i < end - 4; i++)
+        {
+            if (data[i] != 0xFF || data[i + 1] != 0xE1) continue;
+            // APP1 segment: FF E1 len_len (big-endian 16-bit length including self)
+            if (i + 4 >= end) break;
+            int segLen = (data[i + 2] << 8) | data[i + 3];
+            int segStart = i + 2;  // start of length field
+            int segEnd = segStart + segLen;
+            if (segEnd > end) break;
+            // Look for "Exif\0\0" header within APP1
+            int exifOff = i + 4; // after length
+            if (exifOff + 6 > end) break;
+            bool isExif = data[exifOff] == 'E' && data[exifOff + 1] == 'x' &&
+                          data[exifOff + 2] == 'i' && data[exifOff + 3] == 'f' &&
+                          data[exifOff + 4] == 0 && data[exifOff + 5] == 0;
+            if (!isExif) continue;
+            // TIFF header: "II" (little-endian) or "MM" (big-endian)
+            int tiffStart = exifOff + 6;
+            if (tiffStart + 8 > end) break;
+            bool littleEndian = data[tiffStart] == 'I' && data[tiffStart + 1] == 'I';
+            bool bigEndian = data[tiffStart] == 'M' && data[tiffStart + 1] == 'M';
+            if (!littleEndian && !bigEndian) continue;
+            // TIFF magic: 0x002A
+            int magic = littleEndian
+                ? data[tiffStart + 2] | (data[tiffStart + 3] << 8)
+                : (data[tiffStart + 2] << 8) | data[tiffStart + 3];
+            if (magic != 0x002A) continue;
+            // IFD0 offset
+            int ifdOff = tiffStart + 4;
+            int ifdOffset = littleEndian
+                ? data[ifdOff] | (data[ifdOff + 1] << 8) | (data[ifdOff + 2] << 16) | (data[ifdOff + 3] << 24)
+                : (data[ifdOff] << 24) | (data[ifdOff + 1] << 16) | (data[ifdOff + 2] << 8) | data[ifdOff + 3];
+            if (ifdOffset <= 0) continue;
+            int ifdPos = tiffStart + ifdOffset;
+            if (ifdPos + 2 > end) continue;
+            // Number of IFD entries (16-bit)
+            int numEntries = littleEndian
+                ? data[ifdPos] | (data[ifdPos + 1] << 8)
+                : (data[ifdPos] << 8) | data[ifdPos + 1];
+            // Scan IFD for Orientation tag (0x0112)
+            int entryStart = ifdPos + 2;
+            for (int e = 0; e < numEntries && entryStart + 12 <= end; e++, entryStart += 12)
+            {
+                int tag = littleEndian
+                    ? data[entryStart] | (data[entryStart + 1] << 8)
+                    : (data[entryStart] << 8) | data[entryStart + 1];
+                if (tag != 0x0112) continue;
+                // Type should be SHORT (3), count 1
+                int type = littleEndian
+                    ? data[entryStart + 2] | (data[entryStart + 3] << 8)
+                    : (data[entryStart + 2] << 8) | data[entryStart + 3];
+                int count = littleEndian
+                    ? data[entryStart + 4] | (data[entryStart + 5] << 8) | (data[entryStart + 6] << 16) | (data[entryStart + 7] << 24)
+                    : (data[entryStart + 4] << 24) | (data[entryStart + 5] << 16) | (data[entryStart + 6] << 8) | data[entryStart + 7];
+                if (type != 3 || count != 1) continue;
+                // Value is in the last 2 bytes of the entry (SHORT fits in 2 bytes)
+                int orient = littleEndian
+                    ? data[entryStart + 8] | (data[entryStart + 9] << 8)
+                    : (data[entryStart + 8] << 8) | data[entryStart + 9];
+                // Valid orientations: 1-8
+                return orient is >= 1 and <= 8 ? orient : 1;
+            }
+            return 1; // APP1 found but no orientation tag
+        }
+        return 1; // No EXIF APP1 found
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsCanceled(void* cancellation)
     {
@@ -481,7 +584,7 @@ internal static unsafe class IthmbCodecPlugin
         _codecApi = (IGCodecApi*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecApi));
         _codecApi->GetCapability = &CodecGetCapability;
         _codecApi->CanHandleExtension = &CodecCanHandleExtension;
-        _codecApi->CanHandleSignature = null;
+        _codecApi->CanHandleSignature = &CodecCanHandleSignature;
         _codecApi->LoadMetadata = &CodecLoadMetadata;
         _codecApi->DecodeStaticRaster = &CodecDecodeStaticRaster;
         _codecApi->FreePixelBuffer = &CodecFreePixelBuffer;
