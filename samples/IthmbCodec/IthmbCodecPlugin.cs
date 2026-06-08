@@ -64,6 +64,7 @@ internal static unsafe class IthmbCodecPlugin
     private static IGStringRef* _extArray;
 
     private static readonly object _bufLock = new();
+    private static readonly object _initLock = new();
     private static readonly Dictionary<nint, nint> _liveBuffers = new();
 
     // ------------------------------ Entry point ------------------------------
@@ -73,11 +74,15 @@ internal static unsafe class IthmbCodecPlugin
         if (hostAbiVersion / 1_000_000 != IGNativeAbi.IG_PLUGIN_ABI_MAJOR) return null;
         if (hostApi == null) return null;
         if (_pluginApi != null) return _pluginApi;
-        _hostApi = hostApi;
-        InitStrings();
-        InitCodecApi();
-        InitPluginApi();
-        return _pluginApi;
+        lock (_initLock)
+        {
+            if (_pluginApi != null) return _pluginApi;
+            _hostApi = hostApi;
+            InitStrings();
+            InitCodecApi();
+            InitPluginApi();
+            return _pluginApi;
+        }
     }
 
     // ------------------------------ Plugin API ------------------------------
