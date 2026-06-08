@@ -31,8 +31,6 @@ internal static unsafe class IthmbCodecPlugin
     // JPEG markers for embedded payload detection
     private static readonly byte[] JfifMarker = "JFIF\0"u8.ToArray();
     private static readonly byte[] ExifMarker = "Exif\0\0"u8.ToArray();
-    private static readonly byte[] JpegStartMarker = [0xFF, 0xD8];
-    private static readonly byte[] JpegEndMarker = [0xFF, 0xD9];
 
     // ------------------------------ Raw profile enums ------------------------------
     private enum IthmbEncoding { Rgb565, Yuv422, Ycbcr420 }
@@ -252,7 +250,9 @@ internal static unsafe class IthmbCodecPlugin
         outInfo->ColorSpace = (int)IGColorSpace.Srgb;
         outInfo->Orientation = 1;
         outInfo->FrameCount = 1;
-        outInfo->FileSizeBytes = data.Length;
+        outInfo->FileSizeBytes = -1;
+        outInfo->IccProfileData = null;
+        outInfo->IccProfileSize = 0;
 
         if (outBuf == null) return IGStatus.OK; // metadata-only
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
@@ -278,7 +278,9 @@ internal static unsafe class IthmbCodecPlugin
         outInfo->ColorSpace = (int)IGColorSpace.Srgb;
         outInfo->Orientation = 1;
         outInfo->FrameCount = 1;
-        outInfo->FileSizeBytes = data.Length;
+        outInfo->FileSizeBytes = -1;
+        outInfo->IccProfileData = null;
+        outInfo->IccProfileSize = 0;
 
         if (outBuf == null) return IGStatus.OK;
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
