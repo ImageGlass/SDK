@@ -1,0 +1,12 @@
+{
+  "id": "Plugin_IthmbCodec",
+  "name": "ITHMB Thumbnail Cache Codec",
+  "description": "Reads Apple .ithmb thumbnail-cache files by locating embedded JPEG payloads or decoding known raw thumbnail profiles. Best-effort support; tested with T####.ithmb files containing embedded JPEG data.",
+  "version": "1.0.0",
+  "author": "B67687",
+  "website": "https://github.com/B67687",
+  "kind": "Codec",
+  "executable": "IthmbCodec.dll",
+  "supportedExtensions": ".ithmb",
+  "minHostVersion": "10.0.2.66"
+}

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>Preview</LangVersion>
+    <Platforms>x64;ARM64</Platforms>
+
+    <!-- Native shared library produced by Native AOT for the v10 codec plugin ABI. -->
+    <OutputType>Library</OutputType>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <SelfContained>true</SelfContained>
+
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+
+    <!-- Resulting binary name MUST match the manifest's "executable" field. -->
+    <AssemblyName>IthmbCodec</AssemblyName>
+    <RootNamespace>IthmbCodec</RootNamespace>
+
+    <!-- This plugin is not part of the ImageGlass app; skip auto-generated AppBuildInfo. -->
+    <GenerateIgAppBuildInfo>false</GenerateIgAppBuildInfo>
+
+    <!-- Sample plugin: do not produce a NuGet package. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\source\ImageGlass.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Manifest must sit next to the published .dll so the host can discover the plugin. -->
+    <None Update="igplugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+</Project>
