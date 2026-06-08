@@ -8,7 +8,7 @@ Reads Apple `.ithmb` thumbnail-cache files by locating embedded JPEG payloads an
 
 - `.ithmb` files containing embedded JPEG data (JFIF/Exif markers)
 - Recovers **full-resolution original photos** (not just thumbnails)
-- Preserves all EXIF metadata (camera model, capture date, GPS, etc.)
+- Embedded JPEG contains original EXIF headers (camera model, capture date, etc.) — ImageGlass may expose some of this metadata
 - Also includes best-effort legacy raw profile support (iPhone/iPod F-prefix files — untested)
 
 ## What doesn't work
@@ -19,7 +19,7 @@ Reads Apple `.ithmb` thumbnail-cache files by locating embedded JPEG payloads an
 
 ## Install
 
-1. Download `IthmbCodec_win-x64.zip` from the [latest release](https://github.com/B67687/image-glass/releases)
+1. Download `IthmbCodec_win-x64.zip` from the [latest release](https://github.com/B67687/ithmb-codec/releases)
 2. Extract to `%LocalAppData%\ImageGlass_10\_plugins\IthmbCodec\`
 3. Restart ImageGlass v10
 4. Drag any `.ithmb` file into the ImageGlass window
