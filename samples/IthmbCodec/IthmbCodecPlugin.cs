@@ -10,6 +10,7 @@ path: decode known legacy raw thumbnail profiles (RGB565, YUV422, YCbCr420).
 Format behavior informed by the IthmbDecoder reference (ImageGlass PR #2316).
 This is a clean-room implementation for the v10 native codec plugin ABI.
 */
+using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImageGlass.SDK.Plugins;
@@ -31,16 +32,20 @@ internal static unsafe class IthmbCodecPlugin
     // JPEG markers for embedded payload detection
     private static readonly byte[] JfifMarker = "JFIF\0"u8.ToArray();
     private static readonly byte[] ExifMarker = "Exif\0\0"u8.ToArray();
+    private static readonly byte[] JpegSoiMarker = [0xFF, 0xD8];
+    private static readonly byte[] JpegEoiMarker = [0xFF, 0xD9];
+    private static readonly byte[] App1Marker = [0xFF, 0xE1];
 
     // ------------------------------ Raw profile enums ------------------------------
     private enum IthmbEncoding { Rgb565, Yuv422, Ycbcr420 }
 
-    private sealed record IthmbVariantProfile(
+    private readonly record struct IthmbVariantProfile(
         int Prefix, int Width, int Height, IthmbEncoding Encoding,
         int FrameByteLength,
-        bool SwapsDimensions = false, bool LittleEndian = true);
+        bool SwapsDimensions = false, bool LittleEndian = true,
+        bool IsPadded = false);
 
-    private static readonly IReadOnlyDictionary<int, IthmbVariantProfile> KnownProfiles =
+    private static readonly FrozenDictionary<int, IthmbVariantProfile> KnownProfiles =
         new Dictionary<int, IthmbVariantProfile>
         {
             [1007] = new(1007, 480, 864, IthmbEncoding.Rgb565, 480 * 864 * 2),
@@ -49,10 +54,12 @@ internal static unsafe class IthmbCodecPlugin
             [1019] = new(1019, 720, 480, IthmbEncoding.Yuv422, 720 * 480 * 2),
             [1020] = new(1020, 176, 220, IthmbEncoding.Rgb565, 176 * 220 * 2, SwapsDimensions: true),
             [1023] = new(1023, 176, 132, IthmbEncoding.Rgb565, 176 * 132 * 2),
-        };
+            // iPod Classic 6G / nano 3G: 12-bit YCbCr 4:2:0 packed into 2 Bpp frame
+            [1067] = new(1067, 720, 480, IthmbEncoding.Ycbcr420, 720 * 480 * 2, IsPadded: true),
+        }.ToFrozenDictionary();
 
     // ------------------------------ Static plugin state ------------------------------
-    private static IGPluginApi* _pluginApi;
+    private static volatile IGPluginApi* _pluginApi;
     private static IGCodecApi* _codecApi;
     private static IGHostApi* _hostApi;
 
@@ -131,21 +138,19 @@ internal static unsafe class IthmbCodecPlugin
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static int CodecCanHandleSignature(byte* signature, int length)
+    internal static int CodecCanHandleSignature(byte* signature, int length)
     {
         if (signature == null || length < 8) return 0;
-        var span = new ReadOnlySpan<byte>(signature, length);
-        int scanLen = Math.Min(length, 256);
-        for (int i = 0; i < scanLen - 4; i++)
-        {
-            if (span[i] != 0xFF || span[i + 1] != 0xD8) continue;
-            int sliceStart = i + 2;
-            int sliceLen = Math.Min(i + 128, scanLen) - sliceStart;
-            var probe = span.Slice(sliceStart, sliceLen);
-            if (probe.IndexOf(JfifMarker) >= 0) return 1;
-            if (probe.IndexOf(ExifMarker) >= 0) return 1;
-        }
-        return 0;
+        var span = new ReadOnlySpan<byte>(signature, Math.Min(length, 256));
+        // SIMD-accelerated search for JPEG SOI marker (FF D8)
+        int soi = span.IndexOf(JpegSoiMarker);
+        if (soi < 0) return 0;
+        // Verify JFIF or Exif within 128 bytes of SOI (must have room for the probe)
+        int scanEnd = Math.Min(soi + 128, span.Length);
+        int probeLen = scanEnd - soi - 2;
+        if (probeLen <= 0) return 0;
+        var probe = span.Slice(soi + 2, probeLen);
+        return probe.IndexOf(JfifMarker) >= 0 || probe.IndexOf(ExifMarker) >= 0 ? 1 : 0;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -204,7 +209,8 @@ internal static unsafe class IthmbCodecPlugin
         // Try embedded JPEG path first
         if (TryFindJpegSlice(fileBytes, out var jpegOffset, out var jpegLength, cancellation))
         {
-            return DecodeJpegSlice(fileBytes, jpegOffset, jpegLength, cancellation, outInfo, outBuf);
+            return DecodeJpegSlice(fileBytes, jpegOffset, jpegLength, fileBytes.Length,
+                cancellation, outInfo, outBuf);
         }
 
         // Fallback: try known raw profiles via prefix header
@@ -219,37 +225,42 @@ internal static unsafe class IthmbCodecPlugin
     }
 
     // ------------------------------ JPEG extraction ------------------------------
-    private static bool TryFindJpegSlice(byte[] data, out int offset, out int length, void* cancellation)
+    internal static bool TryFindJpegSlice(byte[] data, out int offset, out int length, void* cancellation)
     {
         offset = 0; length = 0;
-        // Scan for JPEG SOI marker (FF D8) with JFIF or Exif payload nearby
-        for (int i = 0; i < data.Length - 4; i++)
+        int i = 0;
+        while (i <= data.Length - JpegSoiMarker.Length)
         {
-            if (data[i] != 0xFF || data[i + 1] != 0xD8) continue;
-            // Search for JFIF or Exif ASCII payload within 128 bytes of SOI
+            // SIMD-accelerated search for FF D8
+            int soi = data.AsSpan(i).IndexOf(JpegSoiMarker);
+            if (soi < 0) return false;
+            i += soi;
+
+            // Periodic cancellation check (every 64KB)
+            if ((i & 0xFFFF) == 0 && IsCanceled(cancellation)) return false;
+
+            // Verify JFIF or Exif within 128 bytes of SOI
             int scanEnd = Math.Min(i + 128, data.Length);
             int jfifOff = IndexOf(data, JfifMarker, i, scanEnd);
             int exifOff = IndexOf(data, ExifMarker, i, scanEnd);
-            if (jfifOff < 0 && exifOff < 0) continue;
+            if (jfifOff < 0 && exifOff < 0) { i += JpegSoiMarker.Length; continue; }
+
             offset = i;
-            // Find JPEG EOI marker (FF D9), checking cancellation every 64KB
-            for (int k = i + 2; k < data.Length - 1; k++)
+            // SIMD-accelerated search for FF D9 after SOI
+            int eoiRel = data.AsSpan(offset + JpegSoiMarker.Length).IndexOf(JpegEoiMarker);
+            if (eoiRel >= 0)
             {
-                if ((k & 0xFFFF) == 0 && IsCanceled(cancellation)) return false;
-                if (data[k] == 0xFF && data[k + 1] == 0xD9)
-                {
-                    length = (k + 2) - i;
-                    return true;
-                }
+                length = (offset + JpegSoiMarker.Length + eoiRel + JpegEoiMarker.Length) - offset;
+                return true;
             }
-            // If no EOI found, use rest of file
-            length = data.Length - i;
+            // No EOI found — treat rest of file as the JPEG payload
+            length = data.Length - offset;
             return true;
         }
         return false;
     }
 
-    private static IGStatus DecodeJpegSlice(byte[] data, int offset, int length,
+    private static IGStatus DecodeJpegSlice(byte[] data, int offset, int length, int fileSize,
         void* cancellation, IGImageInfo* outInfo, IGPixelBuffer* outBuf)
     {
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
@@ -257,13 +268,9 @@ internal static unsafe class IthmbCodecPlugin
         if (offset < 0 || length <= 0 || offset + length > data.Length)
             return IGStatus.DecodeFailed;
 
-        byte[] jpegBytes;
-        if (offset == 0 && length == data.Length)
-            jpegBytes = data;
-        else
-            jpegBytes = data[offset..(offset + length)];
-
-        using var skData = SKData.CreateCopy(jpegBytes);
+        using var skData = offset == 0 && length == data.Length
+            ? SKData.CreateCopy(data)
+            : CreateSliceSkData(data, offset, length);
         using var codec = SKCodec.Create(skData);
         if (codec == null) { Log(4, "ITHMB: JPEG slice is not a valid image"); return IGStatus.DecodeFailed; }
 
@@ -272,12 +279,21 @@ internal static unsafe class IthmbCodecPlugin
         if (w <= 0 || h <= 0) return IGStatus.DecodeFailed;
 
         int hasAlpha = srcInfo.AlphaType == SKAlphaType.Opaque ? 0 : 1;
-        FillImageInfo(outInfo, w, h, hasAlpha, ReadExifOrientation(data, offset, length));
+        FillImageInfo(outInfo, w, h, hasAlpha, ReadExifOrientation(data, offset, length), fileSize);
 
         if (outBuf == null) return IGStatus.OK; // metadata-only
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
         return DecodeToPixelBuffer(codec, w, h, outBuf);
+    }
+
+    /// <summary>Creates an SKData from a slice of a byte array without an intermediate allocation.</summary>
+    private static SKData CreateSliceSkData(byte[] data, int offset, int length)
+    {
+        fixed (byte* p = data)
+        {
+            return SKData.CreateCopy((IntPtr)(p + offset), length);
+        }
     }
 
     // ------------------------------ Raw profile decoding ------------------------------
@@ -290,7 +306,8 @@ internal static unsafe class IthmbCodecPlugin
 
         if (data.Length < 4 + frameSize) { Log(4, "ITHMB: raw file too small for profile"); return IGStatus.DecodeFailed; }
 
-        FillImageInfo(outInfo, w, h, hasAlpha: 0, orientation: 1);
+        int fileSize = data.Length; // actual file bytes read (available before FillImageInfo)
+        FillImageInfo(outInfo, w, h, hasAlpha: 0, orientation: 1, fileSize: fileSize);
 
         if (outBuf == null) return IGStatus.OK;
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
@@ -299,6 +316,12 @@ internal static unsafe class IthmbCodecPlugin
         if (allocStatus != IGStatus.OK) return allocStatus;
 
         var raw = data.AsSpan(4);
+        // For padded profiles, trim to the valid pixel data portion
+        if (profile.IsPadded)
+        {
+            int validSize = w * h * 3 / 2;
+            if (raw.Length > validSize) raw = raw[..validSize];
+        }
         switch (profile.Encoding)
         {
             case IthmbEncoding.Rgb565:
@@ -322,7 +345,7 @@ internal static unsafe class IthmbCodecPlugin
         return IGStatus.OK;
     }
 
-    private static void DecodeRgb565(ReadOnlySpan<byte> src, byte* dst, int w, int h, bool littleEndian)
+    internal static void DecodeRgb565(ReadOnlySpan<byte> src, byte* dst, int w, int h, bool littleEndian)
     {
         for (int y = 0; y < h; y++)
         {
@@ -332,9 +355,12 @@ internal static unsafe class IthmbCodecPlugin
                 ushort rgb = littleEndian
                     ? (ushort)(src[idx] | (src[idx + 1] << 8))
                     : (ushort)((src[idx] << 8) | src[idx + 1]);
-                int r = ((rgb >> 11) & 0x1F) * 255 / 31;
-                int g = ((rgb >> 5) & 0x3F) * 255 / 63;
-                int b = (rgb & 0x1F) * 255 / 31;
+                int r5 = (rgb >> 11) & 0x1F;
+                int g6 = (rgb >> 5) & 0x3F;
+                int b5 = rgb & 0x1F;
+                int r = (r5 << 3) | (r5 >> 2);   // 5-bit → 8-bit with MSB replication
+                int g = (g6 << 2) | (g6 >> 4);   // 6-bit → 8-bit with MSB replication
+                int b = (b5 << 3) | (b5 >> 2);
                 int dstIdx = (y * w + x) * 4;
                 dst[dstIdx] = (byte)b;
                 dst[dstIdx + 1] = (byte)g;
@@ -344,7 +370,7 @@ internal static unsafe class IthmbCodecPlugin
         }
     }
 
-    private static void DecodeYuv422(ReadOnlySpan<byte> src, byte* dst, int w, int h)
+    internal static void DecodeYuv422(ReadOnlySpan<byte> src, byte* dst, int w, int h)
     {
         // UYVY interleaved: every 4 bytes = U0 Y0 V0 Y1
         for (int y = 0; y < h; y++)
@@ -363,7 +389,7 @@ internal static unsafe class IthmbCodecPlugin
         }
     }
 
-    private static void DecodeYcbcr420(ReadOnlySpan<byte> src, byte* dst, int w, int h)
+    internal static void DecodeYcbcr420(ReadOnlySpan<byte> src, byte* dst, int w, int h)
     {
         int ySize = w * h;
         int uvSize = ySize / 4;
@@ -429,7 +455,7 @@ internal static unsafe class IthmbCodecPlugin
     // ------------------------------ Helpers ------------------------------
 
     /// <summary>Populates an IGImageInfo with common defaults.</summary>
-    private static void FillImageInfo(IGImageInfo* info, int w, int h, int hasAlpha, int orientation)
+    private static void FillImageInfo(IGImageInfo* info, int w, int h, int hasAlpha, int orientation, long fileSize = -1)
     {
         info->Width = w;
         info->Height = h;
@@ -439,7 +465,7 @@ internal static unsafe class IthmbCodecPlugin
         info->ColorSpace = (int)IGColorSpace.Srgb;
         info->Orientation = orientation;
         info->FrameCount = 1;
-        info->FileSizeBytes = -1;
+        info->FileSizeBytes = fileSize;
         info->IccProfileData = null;
         info->IccProfileSize = 0;
     }
@@ -489,51 +515,59 @@ internal static unsafe class IthmbCodecPlugin
     /// Reads the EXIF Orientation tag (0x0112) from a JPEG slice.
     /// Returns 1-8 on success, or 1 (normal) if not found.
     /// </summary>
-    private static int ReadExifOrientation(byte[] data, int jpegOffset, int jpegLength)
+    internal static int ReadExifOrientation(byte[] data, int jpegOffset, int jpegLength)
     {
         int end = jpegOffset + jpegLength;
-        for (int i = jpegOffset + 2; i < end - 4; i++)
+        var jpeg = data.AsSpan(jpegOffset, jpegLength);
+
+        // SIMD-accelerated search for APP1 marker (FF E1)
+        int app1Rel = jpeg.IndexOf(App1Marker);
+        if (app1Rel < 0) return 1;
+        int app1Start = jpegOffset + app1Rel;
+
+        // APP1 segment: FF E1 len_len (big-endian 16-bit length including self)
+        if (app1Start + 4 >= end) return 1;
+        int segEnd = app1Start + 2 + ReadU16BE(data, app1Start + 2);
+        if (segEnd > end) return 1;
+
+        // Look for "Exif\0\0" header within APP1
+        int exifOff = app1Start + 4;
+        if (exifOff + 6 > end) return 1;
+        if (data[exifOff] != 'E' || data[exifOff + 1] != 'x' ||
+            data[exifOff + 2] != 'i' || data[exifOff + 3] != 'f' ||
+            data[exifOff + 4] != 0 || data[exifOff + 5] != 0) return 1;
+
+        // TIFF header: "II" (little-endian) or "MM" (big-endian)
+        int tiffStart = exifOff + 6;
+        if (tiffStart + 8 > end) return 1;
+        bool le = data[tiffStart] == 'I' && data[tiffStart + 1] == 'I';
+        bool be = data[tiffStart] == 'M' && data[tiffStart + 1] == 'M';
+        if (!le && !be) return 1;
+
+        // TIFF magic: 0x002A
+        if ((le ? ReadU16LE(data, tiffStart + 2) : ReadU16BE(data, tiffStart + 2)) != 0x002A) return 1;
+
+        // IFD0 offset
+        int ifdOff = tiffStart + 4;
+        int ifdPos = tiffStart + (int)(le ? ReadU32LE(data, ifdOff) : ReadU32BE(data, ifdOff));
+        if (ifdPos <= tiffStart || ifdPos + 2 > end) return 1;
+
+        // Number of IFD entries (16-bit)
+        int numEntries = le ? ReadU16LE(data, ifdPos) : ReadU16BE(data, ifdPos);
+
+        // Scan IFD for Orientation tag (0x0112)
+        int entryStart = ifdPos + 2;
+        for (int e = 0; e < numEntries && entryStart + 12 <= end; e++, entryStart += 12)
         {
-            if (data[i] != 0xFF || data[i + 1] != 0xE1) continue;
-            // APP1 segment: FF E1 len_len (big-endian 16-bit length including self)
-            if (i + 4 >= end) break;
-            int segEnd = i + 2 + ReadU16BE(data, i + 2);
-            if (segEnd > end) break;
-            // Look for "Exif\0\0" header within APP1
-            int exifOff = i + 4;
-            if (exifOff + 6 > end) break;
-            if (data[exifOff] != 'E' || data[exifOff + 1] != 'x' ||
-                data[exifOff + 2] != 'i' || data[exifOff + 3] != 'f' ||
-                data[exifOff + 4] != 0 || data[exifOff + 5] != 0) continue;
-            // TIFF header: "II" (little-endian) or "MM" (big-endian)
-            int tiffStart = exifOff + 6;
-            if (tiffStart + 8 > end) break;
-            bool le = data[tiffStart] == 'I' && data[tiffStart + 1] == 'I';
-            bool be = data[tiffStart] == 'M' && data[tiffStart + 1] == 'M';
-            if (!le && !be) continue;
-            // TIFF magic: 0x002A
-            if ((le ? ReadU16LE(data, tiffStart + 2) : ReadU16BE(data, tiffStart + 2)) != 0x002A) continue;
-            // IFD0 offset
-            int ifdOff = tiffStart + 4;
-            int ifdPos = tiffStart + (int)(le ? ReadU32LE(data, ifdOff) : ReadU32BE(data, ifdOff));
-            if (ifdPos <= tiffStart || ifdPos + 2 > end) continue;
-            // Number of IFD entries (16-bit)
-            int numEntries = le ? ReadU16LE(data, ifdPos) : ReadU16BE(data, ifdPos);
-            // Scan IFD for Orientation tag (0x0112)
-            int entryStart = ifdPos + 2;
-            for (int e = 0; e < numEntries && entryStart + 12 <= end; e++, entryStart += 12)
-            {
-                int tag = le ? ReadU16LE(data, entryStart) : ReadU16BE(data, entryStart);
-                if (tag != 0x0112) continue;
-                // Type must be SHORT (3), count 1
-                int type = le ? ReadU16LE(data, entryStart + 2) : ReadU16BE(data, entryStart + 2);
-                int count = (int)(le ? ReadU32LE(data, entryStart + 4) : ReadU32BE(data, entryStart + 4));
-                if (type != 3 || count != 1) continue;
-                // Orientation value is in the last 2 bytes (SHORT fits in 2 bytes)
-                int orient = le ? ReadU16LE(data, entryStart + 8) : ReadU16BE(data, entryStart + 8);
-                return orient is >= 1 and <= 8 ? orient : 1;
-            }
-            return 1;
+            int tag = le ? ReadU16LE(data, entryStart) : ReadU16BE(data, entryStart);
+            if (tag != 0x0112) continue;
+            // Type must be SHORT (3), count 1
+            int type = le ? ReadU16LE(data, entryStart + 2) : ReadU16BE(data, entryStart + 2);
+            int count = (int)(le ? ReadU32LE(data, entryStart + 4) : ReadU32BE(data, entryStart + 4));
+            if (type != 3 || count != 1) continue;
+            // Orientation value is in the last 2 bytes (SHORT fits in 2 bytes)
+            int orient = le ? ReadU16LE(data, entryStart + 8) : ReadU16BE(data, entryStart + 8);
+            return orient is >= 1 and <= 8 ? orient : 1;
         }
         return 1;
     }

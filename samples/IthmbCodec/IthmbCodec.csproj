@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>Preview</LangVersion>
     <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;osx-arm64</RuntimeIdentifiers>
 
     <!-- Native shared library produced by Native AOT for the v10 codec plugin ABI. -->
     <OutputType>Library</OutputType>
@@ -19,19 +20,27 @@
     <AssemblyName>IthmbCodec</AssemblyName>
     <RootNamespace>IthmbCodec</RootNamespace>
 
+    <!-- Exclude the test project from main compilation. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);test/**</DefaultItemExcludes>
+
     <!-- This plugin is not part of the ImageGlass app; skip auto-generated AppBuildInfo. -->
     <GenerateIgAppBuildInfo>false</GenerateIgAppBuildInfo>
 
-    <!-- Sample plugin: do not produce a NuGet package. -->
+    <!-- Plugin: do not produce a NuGet package. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\source\ImageGlass.SDK.csproj" />
+    <!-- Path relative to ImageGlass/SDK repo root: samples/IthmbCodec/ → source/ -->
+    <ProjectReference Include="../../source/ImageGlass.SDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="IthmbCodec.Tests" />
   </ItemGroup>
 
   <ItemGroup>
