@@ -31,12 +31,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Path relative to ImageGlass/SDK repo root: samples/IthmbCodec/ → source/ -->
-    <ProjectReference Include="../../source/ImageGlass.SDK.csproj" />
+    <ProjectReference Include="../../imageglass-sdk/source/ImageGlass.SDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="SkiaSharp" Version="3.*" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +45,10 @@
   <ItemGroup>
     <!-- Manifest must sit next to the published .dll so the host can discover the plugin. -->
     <None Update="igplugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="profiles.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>

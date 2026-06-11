@@ -213,20 +213,51 @@ The standalone repo (`B67687/ithmb-codec`) is the primary development home. The 
 
 ## References and Acknowledgments
 
-This implementation draws on the work of several open-source projects that reverse-engineered the `.ithmb` format. Their findings are referenced in the code and documentation.
+Every known open-source `.ithmb` implementation across the internet (GitHub, Codeberg, GitLab, SourceHut, Bitbucket, Gitee, Launchpad, SourceForge) was surveyed --- a total of **11 projects**. Below is the complete list with license compatibility for this MIT-licensed plugin.
 
-| Project                                                                             | Author(s)       | What it contributed                                                                                                                                                                                                 | License |
-| ----------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| [**Keith's iPod Photo Reader**](https://github.com/kebwi/Keiths_iPod_Photo_Reader)  | Keith W.        | Original reverse engineering of .ithmb: 13 decode methods, interlaced YUV 4:2:2, 4:2:0, RGB565, RGB32, grayscale. The most comprehensive format reference available. Format documentation reproduced in README.txt. | GPL-2.0 |
-| [**ithmbrdr**](https://github.com/cyianor/ithmbrdr)                                 | cyianor         | Go implementation of F1067 planar YCbCr 4:2:0 using correct BT.601 coefficients. Confirmed the "half padded" frame structure for iPod Classic 6G / Nano 3G.                                                         | MIT     |
-| [**andrewmalta/ithmb**](https://github.com/andrewmalta/ithmb)                       | Andrew Malta    | Python decoder for F1019 interlaced YUV (720x480) and F1015/F1024/F1036 16-bit RGB. Confirmed the CLCL packed-chroma pixel layout.                                                                                  | MIT     |
-| [**ithmb-extractor-F1007**](https://github.com/Gaurav-Phogat/ithmb-extractor-F1007) | Gaurav Phogat   | Python decoder for F1007 RGB565 at 480×864 (iPod nano 7G). Confirmed 5-6-5 bit layout with MSB-replication scaling.                                                                                                 | MIT     |
-| [**ImageGlass**](https://github.com/d2phap/ImageGlass)                              | Duong Dieu Phap | Host application. Original PR [#2316](https://github.com/d2phap/ImageGlass/pull/2316) proposed GPL-3.0 ITHMB support in v9; this plugin is a clean-room MIT replacement for the v10 Native AOT plugin ABI.          | GPL-3.0 |
-| [**ImageGlass SDK**](https://github.com/ImageGlass/SDK)                             | Duong Dieu Phap | Native codec plugin ABI (`IGPluginApi`, `IGCodecApi`, `IGHostApi` types), `igplugin.json` schema, and the Base64Codec reference sample.                                                                             | MIT     |
+### Directly incorporated (MIT-licensed, compatible)
+
+| Project                                                                        | Author(s) | What it contributed                                                                                                                                         |
+| ------------------------------------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**iOpenPod**](https://github.com/TheRealSavi/iOpenPod)                        | Savi      | Most complete modern codec (2026). 50+ format entries covering all iPod generations. Encode + decode for RGB565/UYVY/I420 with geometry resolution.         |
+| [**ithmbrdr**](https://github.com/cyianor/ithmbrdr)                            | cyianor   | Go implementation of F1067 planar YCbCr 4:2:0 using correct BT.601 coefficients. Confirmed the "half padded" frame structure for iPod Classic 6G / Nano 3G. |
+| [**B67687/ithmb-codec**](https://github.com/B67687/ithmb-codec) (this project) | B67687    | C# Native AOT ImageGlass plugin. JPEG-embedded path (956/956 files). Primary development home.                                                              |
+
+### Used as format reference (clean-room, no code copied)
+
+Format specifications (resolution per format ID, byte layout, encoding types) are factual discoveries from reverse-engineering binary files, not copyrightable creative expression. These projects' documentation and public discussions informed this implementation.
+
+| Project / Source                                                                                                                 | Author(s)          | What it contributed                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Keith's iPod Photo Reader**](https://github.com/kebwi/Keiths_iPod_Photo_Reader)                                               | Keith Wiley        | Original 2005 reverse engineering. 13 decode methods, the definitive format reference. [iLounge thread](https://web.archive.org/web/20191225184817/https://forums.ilounge.com/threads/hacking-ithmb-file-format.110066/) documents the YUV 4:2:2 interlaced discovery with working code. |
+| [**iLounge "Gory Details" thread**](https://web.archive.org/web/20090120040252/http://forums.ilounge.com/showthread.php?t=66435) | jhollington        | Complete per-device format ID table (2005): every iPod/iPhone generation mapped to its ithmb format IDs, resolutions, and byte counts.                                                                                                                                                   |
+| [**andrewmalta/ithmb**](https://github.com/andrewmalta/ithmb)                                                                    | Andrew Malta       | Python decoder confirming F1019 CLCL packed-chroma layout and the 5G iPod format variants.                                                                                                                                                                                               |
+| [**Gaurav-Phogat/ithmb-extractor-F1007**](https://github.com/Gaurav-Phogat/ithmb-extractor-F1007)                                | Gaurav Phogat      | F1007 RGB565 at 480×864 (iPod nano 7G). Confirmed 5-6-5 bit layout with MSB-replication scaling.                                                                                                                                                                                         |
+| [**keyj.emphy.de blog**](https://web.archive.org/web/2024*/https://keyj.emphy.de/an-ipod-hackers-diary/)                         | Jeff Luyten (KeyJ) | ArtworkDB reverse-engineering diary: discovered F1027/F1031 are **mandatory** filenames (not arbitrary), RGB565 byte-swapped artwork format.                                                                                                                                             |
+| [**worstje/repear**](https://github.com/worstje/repear)                                                                          | worstje            | Python ArtworkDB writer with complete format→dimension encoder table. Documents model-based format ID assignment.                                                                                                                                                                        |
+| [**tbutter/podsyncr**](https://github.com/tbutter/podsyncr)                                                                      | tbutter            | iPod Nano 2G photo syncer (2006). Writes F1023/F1032 .ithmb files with configurable endianness.                                                                                                                                                                                          |
+| [**libgpod/gtkpod**](https://github.com/gtkpod/libgpod)                                                                          | gtkpod team        | C library with 22 format variants, RGB565/RGB555/RGB888/UYVY/I420 packers, complete ArtworkDB/PhotoDB parser. 22 years of Linux distribution.                                                                                                                                            |
+
+### Historical references (archived from dead sources)
+
+| Source                                                                                                                                        | Content                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [**iLounge hacking thread**](https://web.archive.org/web/20191225184817/https://forums.ilounge.com/threads/hacking-ithmb-file-format.110066/) | Keith Wiley's original YUV 4:2:2 reverse-engineering with working C++ code. Recovered from Wayback Machine.        |
+| [**keyj.emphy.de blog**](https://web.archive.org/web/2024*/https://keyj.emphy.de/an-ipod-hackers-diary/)                                      | ArtworkDB RE diary. Recovered from Wayback Machine.                                                                |
+| [**iPodLinux Wiki: ITunesDB**](https://web.archive.org/web/2024*/http://www.ipodlinux.org/ITunesDB/)                                          | Complete iTunesDB/ArtworkDB/PhotoDB binary format specification. Recovered from Wayback Machine.                   |
+| **iThmbConv** (lost C source)                                                                                                                 | Windows CLI ithmb decoder (2007-2014). C source code included in RAR, links now dead. Known to support 4G/5G iPod. |
+
+### External tools (not open source)
+
+| Tool                                                            | Platform | Notes                                                                                   |
+| --------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------- |
+| [**iThmb Converter**](https://www.ithmbconverter.com/)          | Windows  | Most comprehensive commercial tool. 6 languages, Constructor mode for unknown variants. |
+| [**File Juicer**](https://echoone.com/filejuicer/formats/ithmb) | macOS    | Commercial format extractor. Documents F1019/F1023/F3008.                               |
+| [**ithmb.org**](https://ithmb.org)                              | Web      | Free browser-based decoder (WASM, offline). Broader device support claimed.             |
 
 ### Color conversion references
 
-- The YCbCr → RGB conversion uses the **ITU-R BT.601** matrix (JPEG standard), as documented in [Recommendation ITU-R BT.601-7](https://www.itu.int/rec/R-REC-BT.601).
+- The YCbCr → RGB conversion uses the **ITU-R BT.601** matrix (JPEG full-range variant), as documented in [Recommendation ITU-R BT.601-7](https://www.itu.int/rec/R-REC-BT.601).
 - The 16-bit RGB565 → RGB888 scaling uses standard **MSB replication** (also used by ffmpeg, libpng, and Skia).
 
 ### Additional format references

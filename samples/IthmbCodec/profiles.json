@@ -1,0 +1,25 @@
+[
+  // External profile definitions for IthmbCodec.
+  // Add entries here to override built-in profiles or define new ones.
+  // This file is loaded on the first decode call and merged with built-in profiles.
+  // External entries take precedence over built-in ones.
+  //
+  // Schema:
+  //   prefix: int (format FXXXX, e.g. 1007)
+  //   width, height: int (pixels)
+  //   encoding: "rgb565" | "yuv422" | "ycbcr420"
+  //   frameBytes: int (bytes per frame, including padding)
+  //   swapsDimensions: bool (optional, default false)
+  //   littleEndian: bool (optional, default true)
+  //   isPadded: bool (optional, default false — for YCbCr420 with 2-Bpp frames)
+  //   isInterlaced: bool (optional, default false — for F1019 YUV422 field-split)
+  //
+  // Example — iPod Photo 4G full-screen:
+  {
+    "prefix": 1013,
+    "width": 220,
+    "height": 176,
+    "encoding": "rgb565",
+    "frameBytes": 77440
+  }
+]
