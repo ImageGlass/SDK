@@ -31,7 +31,8 @@ internal sealed class ToolClient : IDisposable
     internal ToolClient(string pipeName, ToolBase tool)
     {
         _tool = tool;
-        _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        // CurrentUserOnly must match the host server (ToolProcessManager) or the connection is refused.
+        _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         HostApi = new ToolHostProxy(this);
     }
 
