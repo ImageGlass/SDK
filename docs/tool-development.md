@@ -65,6 +65,11 @@ The SDK hides the pipe, the JSON framing, and request/response correlation. You 
 event hooks and `await` `HostApi` methods — it reads like ordinary async C#.
 
 
+> **Pipe security (mostly automatic).** The pipe is restricted to your user account
+> (`PipeOptions.CurrentUserOnly` on both ends) and, on Windows, the host verifies the
+> connecting process is the tool it launched. The SDK sets this for you; a non-SDK client in
+> another language must set the same current-user-only option or the host refuses it.
+
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -268,9 +273,14 @@ What else `HostApi` can do:
 | `GetSourceSizeAsync()` | Source image dimensions. |
 | `GetSelectionAsync()` / `SetSelectionAsync(rect)` | Get/set the selection rectangle (`null` clears it). |
 | `EnableSelectionAsync(enable)` | Toggle selection mode in the viewer. |
-| `RunApiAsync(apiName, argument?)` | Invoke a named ImageGlass API method (drive the host). |
+| `RunApiAsync(apiName, argument?)` | Invoke a named ImageGlass API method (drive the host). Non-destructive APIs only over the pipe (see the note below). |
 | `GetThemeInfoAsync()` | Current theme (dark mode, accent/bg/fg colors). |
 | `SubscribeEventsAsync(subscriptions)` | Opt into real-time events (Step 6). |
+
+> **Not every API is callable from a tool.** Over the pipe, `RunApiAsync` is limited to
+> non-destructive methods. The host refuses a fixed denylist (delete, rename, save/save-as,
+> new-window, open-with, open-in-editor, set-wallpaper/lock-screen, set/remove default photo
+> viewer, exit) and returns an error result. Read-only, navigation, zoom, and view toggles work.
 
 
 ## Step 6 — Subscribe to real-time events
@@ -383,9 +393,10 @@ the currently viewed image** when it launches the tool:
 }
 ```
 
-`<file>` expands **without quotes**, so wrap it yourself (`"<file>"`) when the path may
-contain spaces. The expanded value arrives in your tool's `args` (the `string[]` passed to
-`Main` / `RunAsync`).
+`<file>` is substituted **per argument, after the template is split into tokens**, so a path
+with spaces stays a single argument: you do not need to quote it, and a crafted filename
+cannot split into extra arguments or inject a command. Quoting (`"<file>"`) still works. The
+value arrives as one entry in your tool's `args` (the `string[]` passed to `Main` / `RunAsync`).
 
 
 ## Step 9 — Build, run, and debug

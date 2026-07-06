@@ -248,8 +248,8 @@ private static IGStatus CodecGetCapability(IGCodecCapability* outCap)
         CodecId   = MakeStringRef(_bufCodecId, CodecIdString.Length),   // "plugin.base64.codec"
         CodecName = MakeStringRef(_bufCodecName, CodecNameString.Length),
 
-        // Higher number wins when multiple codecs can handle the same file.
-        // No built-in codec claims ".b64", but 200 makes us a confident winner.
+        // Higher number wins. No built-in decodes ".b64", so this wins regardless.
+        // (Priority > 100 is clamped for built-in-listed extensions; see below.)
         MetadataPriority = 200,
         DecodePriority   = 200,
 
@@ -265,10 +265,14 @@ private static IGStatus CodecGetCapability(IGCodecCapability* outCap)
 }
 ```
 
-**Codec selection is priority-based.** When several codecs (yours, plus built-ins) report
-they can handle a file, the host picks the highest `DecodePriority` (or `MetadataPriority`
-for metadata loads). If you're adding a brand-new extension nobody else claims, any
-positive priority works; if you're *overriding* a built-in format, you must out-bid it.
+**Codec selection is priority-based, with a guard for built-in formats.** When several
+codecs (yours, plus built-ins) report they can handle a file, the host picks the highest
+`DecodePriority` (or `MetadataPriority` for metadata loads). For a **brand-new extension**
+nobody else handles, any positive priority wins. But if you claim an extension already in the
+host's built-in format list, the host **clamps your priority below the built-in ceiling (100)**
+so a built-in decoder always wins it, however high you report. Overriding a built-in decoder
+is not automatic: the user (or an admin config) must grant that plugin the override-built-ins
+trust flag. Aim plugins at formats the built-ins do not already decode.
 
 The capability flags must match reality: if you set `SupportsAnimation = 1` you **must**
 provide all three animation function pointers, or the host downgrades the flag to 0.
@@ -541,8 +545,10 @@ discover the plugin — see [`igplugin.json`](../samples/Base64Codec/igplugin.js
 
 Required fields are `id`, `name`, and `executable`. A few rules:
 
-- **`executable` must match your `AssemblyName`** — and is the filename only, relative to
-  the plugin folder (`MyCodec.dll` / `libMyCodec.so` / `MyCodec.dylib`).
+- **`executable` must match your `AssemblyName`** and is the filename only, relative to the
+  plugin folder (`MyCodec.dll` / `libMyCodec.so` / `MyCodec.dylib`). The host rejects an
+  absolute/rooted path, any `..`, or a subfolder, and requires the platform native-lib
+  extension: keep the library directly in the plugin folder.
 - **Optional `supportedExtensions`** (semicolon-separated, e.g. `".foo;.bar"`) *overrides*
   the extensions your codec reports through `IGCodecCapability`. Omit it to use the
   plugin-reported list. This lets a user widen or restrict a codec's scope without a rebuild.
@@ -598,8 +604,11 @@ that folder — e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sampl
     libSkiaSharp.dll        # the native dependency emitted by AOT publish
 ```
 
-On next launch ImageGlass scans `_plugins`, discovers the manifest, loads the DLL, calls
-`ig_plugin_get_api`, and registers `plugin.base64.codec` for `.b64`.
+On next launch ImageGlass scans `_plugins` and discovers the manifest. **A newly installed
+plugin does not load automatically:** it appears in **Settings > Plugins** as untrusted and you
+must enable it there. Enabling pins the library's SHA-256; only then does the host load the
+DLL, call `ig_plugin_get_api`, and register `plugin.base64.codec` for `.b64`. If you later
+rebuild or replace the DLL, its hash no longer matches and the host prompts you to re-enable it.
 
 Make a test file from any image and open it:
 
@@ -656,13 +665,16 @@ host" or "works on my machine but not in production."
   process-lifetime buffers.
 - **Free your own allocations on the failure path.** The host only calls `FreePixelBuffer`
   for calls that returned `IGStatus.OK`.
+- **Discovery is not trust.** A newly installed plugin does not run until the user enables it
+  in Settings > Plugins; enabling pins the library's SHA-256, and changing the file revokes it.
 
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 | --- | --- |
-| Plugin silently doesn't load | `ig_plugin_get_api` returned `null` — usually a major ABI mismatch, or `executable` in the manifest doesn't match the actual library filename. |
+| Plugin silently doesn't load | Not yet enabled in **Settings > Plugins** (new plugins load only after you trust them), or the DLL changed since you trusted it (hash mismatch: re-enable), or `ig_plugin_get_api` returned `null` (major ABI mismatch), or `executable` doesn't match the library filename. |
+| Plugin loaded once, then never again | It hard-crashed the host during a previous load and was quarantined. Fix the crash, then clear `{ConfigDir}/_plugins/_quarantine/`. |
 | Host loads it but the file won't open | `CanHandleExtension` returned 0 for that extension, or a built-in codec out-bid your `DecodePriority`. Raise the priority or check the extension string (lowercase, leading dot). |
 | Crash on close / intermittent crash | `FreePixelBuffer` isn't thread-safe, or you freed a buffer you'd already freed. Use the remove-from-map-first guard. |
 | Garbled / shifted pixels | Wrong `Stride` or `PixelFormat`. `Stride` must be ≥ `Width * bytesPerPixel` and match the actual buffer layout. |
