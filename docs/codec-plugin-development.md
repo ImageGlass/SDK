@@ -487,6 +487,14 @@ from the map first, bail if absent) is cheap insurance.
 > to release them. Never free a buffer the host gave you, and never expect the host to
 > `free()` a pointer with an allocator it doesn't know about — that's why you free your own.
 
+> **`FreePixelBuffer` is best-effort, not guaranteed for every buffer.** At host shutdown
+> (or when the host reloads your plugin) the host may unload your library while images
+> backed by your buffers are still alive. In that case the host **skips** the remaining
+> `FreePixelBuffer` calls — unloading the library reclaims your buffers with it. So free
+> only memory you allocated inside the library. Do **not** rely on `FreePixelBuffer` to run
+> for externally-observable cleanup (temp files, sockets, host callbacks); use `Shutdown`
+> for that, and note `Shutdown` can be called while buffers are still outstanding.
+
 
 ## Step 8 — Honor cancellation
 
@@ -657,6 +665,9 @@ host" or "works on my machine but not in production."
 - **Memory ownership.** Whoever allocates frees. You allocate pixel/animation buffers; the
   host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
 - **`FreePixelBuffer` must be thread-safe** — Skia may call it from any thread on dispose.
+- **`FreePixelBuffer` is not guaranteed to run for every buffer.** If the host unloads your
+  library (shutdown/reload) while buffers are outstanding, it skips the remaining frees; the
+  unload reclaims them. Free only in-library memory there — never rely on it for external cleanup.
 - **Animation frames are fully composed RGBA at full canvas size.** No host-side compositing.
 - **Cancellation** is an opaque `void*`; poll `IGHostCoreApi.IsCancellationRequested` and
   return `IGStatus.Canceled`.
