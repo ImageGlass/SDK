@@ -24,6 +24,12 @@ A few concrete examples of what the SDK makes possible:
 See [Samples](#samples) for working, end-to-end examples, and the guides above for the full walkthroughs. The sections further down are a quick orientation.
 
 
+## 🫟 Community plugins and tools showcase
+Explore or download existing extensions built by the community:
+- [ImageGlass Plugins](https://github.com/ImageGlass/SDK/blob/main/showcase/plugins.md) - Native plugins to extend ImageGlass capabilities.
+- [ImageGlass Tools](https://github.com/ImageGlass/SDK/blob/main/showcase/tools.md) - External applications integrated with ImageGlass features.
+
+
 ## Installation
 
 Install the package from [NuGet](https://www.nuget.org/packages/ImageGlass.SDK):
