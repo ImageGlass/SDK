@@ -50,7 +50,7 @@ Copy the published folder (containing the DLL, `igplugin.json`, and the native
 `libSkiaSharp` asset emitted by the AOT publish) into the host's plugins dir:
 
 ```text
-%LOCALAPPDATA%\ImageGlass_10\_plugins\Base64Codec\
+%LOCALAPPDATA%\ImageGlass\_plugins\Base64Codec\
     Base64Codec.dll
     igplugin.json
     libSkiaSharp.dll

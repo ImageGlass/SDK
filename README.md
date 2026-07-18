@@ -106,9 +106,9 @@ into the `_plugins` folder of ImageGlass's config directory:
 
 | Platform | Config directory |
 | --- | --- |
-| Windows | `%LocalAppData%\ImageGlass_10` |
-| Linux | `~/.local/share/ImageGlass_10` |
-| macOS | `/Users/<username>/Library/Application Support/ImageGlass_10` |
+| Windows | `%LocalAppData%\ImageGlass` |
+| Linux | `~/.local/share/ImageGlass` |
+| macOS | `/Users/<username>/Library/Application Support/ImageGlass` |
 
 Make sure the `igplugin.json` manifest is located inside that folder, for example:
 `configdir/_plugins/my_codec/igplugin.json`. ImageGlass scans `_plugins` on launch,

@@ -598,15 +598,15 @@ Copy the **entire published folder** into the `_plugins` directory of ImageGlass
 
 | Platform | Config directory |
 | --- | --- |
-| Windows | `%LocalAppData%\ImageGlass_10` |
-| Linux | `~/.local/share/ImageGlass_10` |
-| macOS | `/Users/<username>/Library/Application Support/ImageGlass_10` |
+| Windows | `%LocalAppData%\ImageGlass` |
+| Linux | `~/.local/share/ImageGlass` |
+| macOS | `/Users/<username>/Library/Application Support/ImageGlass` |
 
 The plugin folder goes under `_plugins`, and the `igplugin.json` manifest **must** sit in
 that folder — e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sample on Windows:
 
 ```text
-%LocalAppData%\ImageGlass_10\_plugins\Base64Codec\
+%LocalAppData%\ImageGlass\_plugins\Base64Codec\
     igplugin.json           # the manifest — must be here
     Base64Codec.dll
     libSkiaSharp.dll        # the native dependency emitted by AOT publish
