@@ -26,8 +26,10 @@ See [Samples](#samples) for working, end-to-end examples, and the guides above f
 
 ## 🫟 Community plugins and tools showcase
 Explore or download existing extensions built by the community:
-- [ImageGlass Plugins](https://github.com/ImageGlass/SDK/blob/main/showcase/plugins.md) - Native plugins to extend ImageGlass capabilities.
-- [ImageGlass Tools](https://github.com/ImageGlass/SDK/blob/main/showcase/tools.md) - External applications integrated with ImageGlass features.
+| Showcase | Description |
+| -------- | --------- |
+| [ImageGlass Plugins](https://github.com/ImageGlass/SDK/blob/main/showcase/plugins.md) | Native plugins to extend ImageGlass capabilities. |
+| [ImageGlass Tools](https://github.com/ImageGlass/SDK/blob/main/showcase/tools.md) | External applications integrated with ImageGlass features. |
 
 
 ## Installation
