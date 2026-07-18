@@ -10,8 +10,8 @@ the smallest interesting codec: it adds support for `.b64` files.
 
 A `.b64` file is just a text file holding a base64 string. Two shapes are accepted:
 
-1. A raw base64 payload — `iVBORw0KGgoAAAANSUhEUgAA...`
-2. A data URI — `data:image/png;base64,iVBORw0KGgo...`
+1. A raw base64 payload – `iVBORw0KGgoAAAANSUhEUgAA...`
+2. A data URI – `data:image/png;base64,iVBORw0KGgo...`
 
 Whitespace and newlines anywhere in the payload are ignored.
 
@@ -68,7 +68,7 @@ Create a test file from any image:
     | Set-Content -NoNewline test.b64
 ```
 
-Open `test.b64` in ImageGlass — it renders as the original image.
+Open `test.b64` in ImageGlass – it renders as the original image.
 
 ## Manifest schema
 

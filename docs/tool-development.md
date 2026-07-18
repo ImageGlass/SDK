@@ -1,6 +1,6 @@
 # Building an External Tool
 
-This guide walks you through building an **external tool** for ImageGlass 10 — an
+This guide walks you through building an **external tool** for ImageGlass 10 – an
 out-of-process program the host launches and talks to over a named pipe. A tool reacts to
 the user (read the pixel under the cursor, follow photo navigation, inspect the current
 photo, drive the viewer, run host commands) instead of teaching the host a new image format.
@@ -10,22 +10,22 @@ sample: a console app that connects to the host, logs metadata of the current ph
 photo navigation, and prints the RGBA value of any pixel the user clicks in the viewer.
 
 > **New format, not a feature?** If you want to *decode an image format ImageGlass can't
-> open*, you want a **Plugin**, not a tool — a native in-process codec. See
+> open*, you want a **Plugin**, not a tool – a native in-process codec. See
 > [codec-plugin-development.md](codec-plugin-development.md).
 
 ## Contents
 
 - [How a tool works](#how-a-tool-works)
 - [Prerequisites](#prerequisites)
-- [Step 1 — Create the project](#step-1--create-the-project)
-- [Step 2 — Subclass ToolBase](#step-2--subclass-toolbase)
-- [Step 3 — Start it from Main](#step-3--start-it-from-main)
-- [Step 4 — React to lifecycle events](#step-4--react-to-lifecycle-events)
-- [Step 5 — Call back into the host](#step-5--call-back-into-the-host)
-- [Step 6 — Subscribe to real-time events](#step-6--subscribe-to-real-time-events)
-- [Step 7 — Read the pixel under a click](#step-7--read-the-pixel-under-a-click)
-- [Step 8 — Register the tool in igconfig.json](#step-8--register-the-tool-in-igconfigjson)
-- [Step 9 — Build, run, and debug](#step-9--build-run-and-debug)
+- [Step 1 – Create the project](#step-1--create-the-project)
+- [Step 2 – Subclass ToolBase](#step-2--subclass-toolbase)
+- [Step 3 – Start it from Main](#step-3--start-it-from-main)
+- [Step 4 – React to lifecycle events](#step-4--react-to-lifecycle-events)
+- [Step 5 – Call back into the host](#step-5--call-back-into-the-host)
+- [Step 6 – Subscribe to real-time events](#step-6--subscribe-to-real-time-events)
+- [Step 7 – Read the pixel under a click](#step-7--read-the-pixel-under-a-click)
+- [Step 8 – Register the tool in igconfig.json](#step-8--register-the-tool-in-igconfigjson)
+- [Step 9 – Build, run, and debug](#step-9--build-run-and-debug)
 - [Working with the full pixel buffer](#working-with-the-full-pixel-buffer)
 - [Threading & async rules](#threading--async-rules)
 - [Host API reference](#host-api-reference)
@@ -62,7 +62,7 @@ Two directions:
   theme info.
 
 The SDK hides the pipe, the JSON framing, and request/response correlation. You override
-event hooks and `await` `HostApi` methods — it reads like ordinary async C#.
+event hooks and `await` `HostApi` methods – it reads like ordinary async C#.
 
 
 > **Pipe security (mostly automatic).** The pipe is restricted to your user account
@@ -74,13 +74,13 @@ event hooks and `await` `HostApi` methods — it reads like ordinary async C#.
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - A reference to the `ImageGlass.SDK` package
-- A working ImageGlass 10 install to launch the tool (it **must** be launched by the host —
+- A working ImageGlass 10 install to launch the tool (it **must** be launched by the host –
   it needs the `--pipe` argument)
 
 
-## Step 1 — Create the project
+## Step 1 – Create the project
 
-A tool is just a console executable that references the SDK — see
+A tool is just a console executable that references the SDK – see
 [`ConsoleColorPicker.csproj`](../samples/ConsoleColorPicker/ConsoleColorPicker.csproj):
 
 ```xml
@@ -105,12 +105,12 @@ A tool is just a console executable that references the SDK — see
 > The sample uses a `<ProjectReference>` to the SDK source because it lives in this repo;
 > in your own tool use the `<PackageReference>` shown above.
 
-Unlike a plugin, a tool has **no AOT requirements** — it's an ordinary process. (You *can*
+Unlike a plugin, a tool has **no AOT requirements** – it's an ordinary process. (You *can*
 publish it with Native AOT if you want a smaller, faster-starting binary; the SDK is
 AOT-compatible. It's optional.)
 
 
-## Step 2 — Subclass ToolBase
+## Step 2 – Subclass ToolBase
 
 All the protocol machinery lives in [`ToolBase`](../source/Tools/ToolBase.cs). You subclass
 it, give it a `ToolId`, and override the hooks you care about. Here's the skeleton from
@@ -136,23 +136,23 @@ internal sealed class ConsoleColorPickerTool : ToolBase
 
 `ToolBase` also exposes a few properties you'll use:
 
-- `HostApi` (`IToolHostProxy`) — your channel back to the host (Step 5).
-- `DataDirectory` — a per-tool folder the host assigns for caches/local state.
-- `CurrentTheme` — the latest `ThemeInfo`, kept up to date by the host.
+- `HostApi` (`IToolHostProxy`) – your channel back to the host (Step 5).
+- `DataDirectory` – a per-tool folder the host assigns for caches/local state.
+- `CurrentTheme` – the latest `ThemeInfo`, kept up to date by the host.
 
 
-## Step 3 — Start it from Main
+## Step 3 – Start it from Main
 
 Your `Main` constructs the tool and calls `RunAsync(args)`. That parses `--pipe <name>` from
 the arguments, connects the pipe, and runs the message loop until the host sends `SHUTDOWN`
-— see [`Program.cs`](../samples/ConsoleColorPicker/Program.cs):
+– see [`Program.cs`](../samples/ConsoleColorPicker/Program.cs):
 
 ```csharp
 internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        Log.Init();   // a file logger — see "Where does output go?" below
+        Log.Init();   // a file logger – see "Where does output go?" below
         Log.Write($"Main() entered. args = [{string.Join(", ", args)}]");
 
         try
@@ -174,18 +174,18 @@ internal static class Program
 }
 ```
 
-> `RunAsync` throws `ArgumentException` if there's no `--pipe` argument — which is exactly
+> `RunAsync` throws `ArgumentException` if there's no `--pipe` argument – which is exactly
 > what happens if you double-click the exe instead of letting ImageGlass launch it. That's
 > expected; the tool is only meaningful as a host-launched child.
 
 **Where does output go?** ImageGlass is a GUI process, so a child launched with
-`UseShellExecute=false` inherits no console — `Console.WriteLine` goes nowhere. The sample
+`UseShellExecute=false` inherits no console – `Console.WriteLine` goes nowhere. The sample
 therefore writes every line to a **log file** next to the executable
 (`ConsoleColorPicker.log`) and, on Windows, also tries `AllocConsole` so you can watch live.
-For your own tool, log to a file (or your own UI) — don't rely on stdout being visible.
+For your own tool, log to a file (or your own UI) – don't rely on stdout being visible.
 
 
-## Step 4 — React to lifecycle events
+## Step 4 – React to lifecycle events
 
 The host drives your tool through `OnXxx` hooks. The three lifecycle hooks:
 
@@ -195,7 +195,7 @@ The host drives your tool through `OnXxx` hooks. The three lifecycle hooks:
 | `OnExecuteAsync(ct)` | The user invokes the tool's primary action (hotkey/menu) | This is "the user ran my tool." |
 | `OnShutdownAsync()` | The host is disconnecting | Last chance to flush/clean up. |
 
-And the event hooks (no subscription needed) — `OnPhotoChanged`, `OnThemeChanged`,
+And the event hooks (no subscription needed) – `OnPhotoChanged`, `OnThemeChanged`,
 `OnColorProfileChanged`, `OnLanguageChanged`. Real-time pointer/selection/frame hooks need a
 subscription (Step 6).
 
@@ -211,7 +211,7 @@ protected override async Task OnExecuteAsync(CancellationToken ct)
 
 protected override void OnPhotoChanged(PhotoChangedEventArgs e)
 {
-    // The event itself carries quick info — no host round-trip needed.
+    // The event itself carries quick info – no host round-trip needed.
     Log.Write("[PHOTO CHANGED]");
     if (string.IsNullOrEmpty(e.FilePath)) { Log.Write("  (no photo loaded)"); return; }
 
@@ -231,10 +231,10 @@ protected override void OnPhotoChanged(PhotoChangedEventArgs e)
 
 Notice the split: `OnPhotoChanged` is a **synchronous, `void` event hook** that already
 carries the essentials in its `PhotoChangedEventArgs`. When you want *more* than the event
-provides, you make an async host call — and you do it off the dispatch thread (covered next).
+provides, you make an async host call – and you do it off the dispatch thread (covered next).
 
 
-## Step 5 — Call back into the host
+## Step 5 – Call back into the host
 
 `HostApi` (an [`IToolHostProxy`](../source/Tools/IToolHostProxy.cs)) is how the tool asks the
 host for things. Every method is async and returns a deserialized result. The sample's
@@ -257,7 +257,7 @@ private async Task PrintCurrentPhotoAsync()
 }
 ```
 
-`ToolPhotoMetadata` is rich — dimensions (current *and* original), format, frame count,
+`ToolPhotoMetadata` is rich – dimensions (current *and* original), format, frame count,
 alpha, color profile, and a full set of EXIF fields (camera model, exposure, ISO, focal
 length, capture date, rating, …). See [`ToolTypes.cs`](../source/Tools/ToolTypes.cs).
 
@@ -283,15 +283,15 @@ What else `HostApi` can do:
 > viewer, exit) and returns an error result. Read-only, navigation, zoom, and view toggles work.
 
 
-## Step 6 — Subscribe to real-time events
+## Step 6 – Subscribe to real-time events
 
-Pointer, selection, and frame events are **opt-in** — they fire constantly, so you only get
+Pointer, selection, and frame events are **opt-in** – they fire constantly, so you only get
 them after you ask. Subscribe once in `OnInitializedAsync`:
 
 ```csharp
 protected override async Task OnInitializedAsync()
 {
-    Log.Write("ConsoleColorPicker — connected to ImageGlass");
+    Log.Write("ConsoleColorPicker – connected to ImageGlass");
     Log.Write($"DataDirectory: {DataDirectory}");
 
     await HostApi.SubscribeEventsAsync(new ToolEventSubscriptions
@@ -316,7 +316,7 @@ Each flag enables a hook:
 Without the matching subscription, these hooks never fire even if you override them.
 
 
-## Step 7 — Read the pixel under a click
+## Step 7 – Read the pixel under a click
 
 Now the payoff. When the user clicks, `OnPointerPressed` fires with both source-image and
 client coordinates. The sample rounds the **source** coordinates and asks the host for the
@@ -328,7 +328,7 @@ protected override void OnPointerPressed(PointerEventArgs e)
     var x = (int)Math.Round(e.SourceX);   // source-image coordinates
     var y = (int)Math.Round(e.SourceY);
 
-    // Event hooks are void — never `await` inside them directly. Hop to a Task
+    // Event hooks are void – never `await` inside them directly. Hop to a Task
     // so the host call doesn't block the read loop (see Threading & async rules).
     _ = Task.Run(async () =>
     {
@@ -346,12 +346,12 @@ protected override void OnPointerPressed(PointerEventArgs e)
 }
 ```
 
-`PointerEventArgs` gives you `SourceX/SourceY` (image pixels — what you want for
+`PointerEventArgs` gives you `SourceX/SourceY` (image pixels – what you want for
 `ReadPixelAsync`), `ClientX/ClientY` (viewer coordinates), and `Button`. `ReadPixelAsync`
 returns a `ToolColor(R, G, B, A)`. That's the whole color picker.
 
 
-## Step 8 — Register the tool in igconfig.json
+## Step 8 – Register the tool in igconfig.json
 
 ImageGlass discovers tools through an `igconfig.json` entry under `Tools`. The `ToolId`
 **must** match your `ToolBase.ToolId`:
@@ -363,7 +363,7 @@ ImageGlass discovers tools through an `igconfig.json` entry under `Tools`. The `
     "ToolName": "Console Color Picker",
     "Executable": "C:\\path\\to\\ConsoleColorPicker.exe",
     "Arguments": "",
-    "IsIntegrated": true,                       // REQUIRED for SDK tools — see below
+    "IsIntegrated": true,                       // REQUIRED for SDK tools – see below
     "Hotkeys": [ "K" ]                          // run on pressing K; [] for no shortcut
   }
 ]
@@ -371,11 +371,11 @@ ImageGlass discovers tools through an `igconfig.json` entry under `Tools`. The `
 
 Two fields decide whether your tool is wired up at all:
 
-- **`IsIntegrated`** — set it `true`. That's what makes this an *SDK tool*: the host launches
+- **`IsIntegrated`** – set it `true`. That's what makes this an *SDK tool*: the host launches
   the process with `--pipe <name>` and wires up the two-way `HostApi` proxy. With it `false`
-  (or omitted), ImageGlass treats the entry as a plain external program — it just launches
+  (or omitted), ImageGlass treats the entry as a plain external program – it just launches
   the exe with its arguments and gives it **no pipe**, so `ToolBase`/`HostApi` won't work.
-- **`Hotkeys`** — an array of key-combination strings (`["Alt+1"]`, `["K"]`). Pressing one
+- **`Hotkeys`** – an array of key-combination strings (`["Alt+1"]`, `["K"]`). Pressing one
   runs the tool (triggering `OnExecuteAsync`). Use `[]` for no shortcut.
 
 ### Passing the current file with the `<file>` macro
@@ -399,7 +399,7 @@ cannot split into extra arguments or inject a command. Quoting (`"<file>"`) stil
 value arrives as one entry in your tool's `args` (the `string[]` passed to `Main` / `RunAsync`).
 
 
-## Step 9 — Build, run, and debug
+## Step 9 – Build, run, and debug
 
 Build the tool:
 
@@ -411,7 +411,7 @@ The exe lands in `bin/Debug/net10.0/ConsoleColorPicker.exe`. Point your `igconfi
 entry's `Executable` at it, restart ImageGlass, and press the hotkey (`K`) or open a photo.
 
 **When a tool "does nothing," turn on tracing.** Set `EnableDebug = true` and provide a
-`DebugLog` sink before calling `RunAsync` — the SDK then logs pipe connection, every received
+`DebugLog` sink before calling `RunAsync` – the SDK then logs pipe connection, every received
 message, and dispatch enter/exit/failure. This surfaces the usual culprits: a wire-format
 mismatch, a swallowed exception in an event handler, or a failed pipe connection.
 
@@ -427,11 +427,11 @@ Common gotchas:
 
 | Symptom | Likely cause |
 | --- | --- |
-| Tool exits immediately with a fatal error | Launched directly instead of by ImageGlass — no `--pipe` argument. |
+| Tool exits immediately with a fatal error | Launched directly instead of by ImageGlass – no `--pipe` argument. |
 | Tool runs but nothing happens on click | You didn't `SubscribeEventsAsync(... PointerPressed = true ...)`. |
 | `ToolId` "not found" / tool never launches | `ToolId` in code ≠ `ToolId` in `igconfig.json`, or `IsIntegrated` isn't `true`. |
-| No visible output | GUI host gives no console — log to a file (the sample writes `*.log`). |
-| Event handler seems to hang the tool | You `await`ed a host call directly inside a `void` event hook — hop to `Task.Run` first. |
+| No visible output | GUI host gives no console – log to a file (the sample writes `*.log`). |
+| Event handler seems to hang the tool | You `await`ed a host call directly inside a `void` event hook – hop to `Task.Run` first. |
 
 
 ## Working with the full pixel buffer
@@ -472,9 +472,9 @@ The SDK runs a single read loop on the pipe. Understanding how it dispatches kee
 of trouble:
 
 - **Lifecycle hooks (`OnInitializedAsync`, `OnExecuteAsync`, `OnShutdownAsync`) are `async
-  Task`** — you can `await` host calls in them directly.
+  Task`** – you can `await` host calls in them directly.
 - **Event hooks (`OnPhotoChanged`, `OnPointerPressed`, `OnSelectionChanged`, …) are
-  synchronous `void`.** Don't `await` a host call inside them on the dispatch path — offload
+  synchronous `void`.** Don't `await` a host call inside them on the dispatch path – offload
   to `Task.Run` (as the sample does for both `OnPhotoChanged`'s rich-metadata fetch and
   `OnPointerPressed`'s `ReadPixelAsync`). This keeps the read loop free to deliver the
   response your call is waiting on.
@@ -491,24 +491,24 @@ of trouble:
 Everything below lives in the `ImageGlass.SDK.Tools` namespace.
 
 **Base class & host proxy**
-- [`ToolBase`](../source/Tools/ToolBase.cs) — subclass this; `ToolId`, `HostApi`,
+- [`ToolBase`](../source/Tools/ToolBase.cs) – subclass this; `ToolId`, `HostApi`,
   `DataDirectory`, `CurrentTheme`, `EnableDebug`/`DebugLog`, `RunAsync`, and all `OnXxx` hooks.
-- [`IToolHostProxy`](../source/Tools/IToolHostProxy.cs) — the `HostApi` surface (pixels,
+- [`IToolHostProxy`](../source/Tools/IToolHostProxy.cs) – the `HostApi` surface (pixels,
   photo info, selection, theming, `RunApiAsync`, `SubscribeEventsAsync`).
 
 **Event args & subscriptions**
-- [`ToolEventSubscriptions`](../source/Tools/ToolTypes.cs) — opt into pointer/selection/frame
+- [`ToolEventSubscriptions`](../source/Tools/ToolTypes.cs) – opt into pointer/selection/frame
   events.
 - `PhotoChangedEventArgs`, `PointerEventArgs`, `SelectionEventArgs`,
-  `LanguageChangedEventArgs`, `ThemeInfo` — all in [`ToolTypes.cs`](../source/Tools/ToolTypes.cs).
+  `LanguageChangedEventArgs`, `ThemeInfo` – all in [`ToolTypes.cs`](../source/Tools/ToolTypes.cs).
 
 **Data types**
-- `ToolColor`, `ToolRect` — small value types ([`ToolTypes.cs`](../source/Tools/ToolTypes.cs)).
-- `ToolPhotoMetadata`, `ToolPhotoList`, `ToolPhotoListItem` — photo info.
-- [`PixelBuffer`](../source/Tools/PixelBuffer.cs) — the memory-mapped full-image buffer.
+- `ToolColor`, `ToolRect` – small value types ([`ToolTypes.cs`](../source/Tools/ToolTypes.cs)).
+- `ToolPhotoMetadata`, `ToolPhotoList`, `ToolPhotoListItem` – photo info.
+- [`PixelBuffer`](../source/Tools/PixelBuffer.cs) – the memory-mapped full-image buffer.
 
 **Protocol (advanced)**
-- [`MessageTypes`](../source/Tools/MessageTypes.cs) — the wire message-name constants.
-- [`ToolMessage`](../source/Tools/ToolMessage.cs) — one JSON object per line on the pipe.
+- [`MessageTypes`](../source/Tools/MessageTypes.cs) – the wire message-name constants.
+- [`ToolMessage`](../source/Tools/ToolMessage.cs) – one JSON object per line on the pipe.
 
 **Full sample:** [`samples/ConsoleColorPicker`](../samples/ConsoleColorPicker/)

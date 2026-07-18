@@ -12,7 +12,7 @@ namespace ImageGlass.SDK.Tools;
 /// <summary>
 /// Source-generated JSON serialization context for tool IPC message types.
 /// Used by external tools and the host's <c>ToolPipeServer</c> over named-pipe IPC.
-/// AOT-safe — no runtime reflection.
+/// AOT-safe – no runtime reflection.
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

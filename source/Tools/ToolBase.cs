@@ -19,7 +19,7 @@ public abstract class ToolBase : IDisposable
     /// When <c>true</c>, the SDK writes detailed IPC lifecycle traces
     /// (pipe connect, every received message, dispatch enter/exit/failure)
     /// to <see cref="DebugLog"/>. Use this to diagnose tools that appear
-    /// to "do nothing" — e.g. wire-format mismatches, swallowed exceptions
+    /// to "do nothing" – e.g. wire-format mismatches, swallowed exceptions
     /// in event handlers, or pipe-connection failures.
     /// <para>Set BEFORE calling <see cref="RunAsync"/>.</para>
     /// </summary>
@@ -55,7 +55,7 @@ public abstract class ToolBase : IDisposable
         ?? throw new InvalidOperationException("Tool not initialized.");
 
     /// <summary>
-    /// Host API proxy — viewer, photo info, dialogs, etc.
+    /// Host API proxy – viewer, photo info, dialogs, etc.
     /// </summary>
     public IToolHostProxy HostApi => Client.HostApi;
 

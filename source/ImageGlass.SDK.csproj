@@ -24,7 +24,7 @@
       The value below is only a fallback for LOCAL builds; the release workflow
       overrides it with -p:Version=... so it is the source of truth at publish time.
       AssemblyVersion / FileVersion components are 16-bit (each max 65535), so they
-      CANNOT carry a large build number — they are pinned to a stable base here.
+      CANNOT carry a large build number – they are pinned to a stable base here.
       Passing -p:Version=... leaves these two intact, avoiding CS7034
       "version string does not conform".
     -->

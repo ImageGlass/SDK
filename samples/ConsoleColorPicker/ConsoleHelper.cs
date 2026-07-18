@@ -1,5 +1,5 @@
 /*
-ConsoleColorPicker — sample integrated external tool for ImageGlass v10.
+ConsoleColorPicker – sample integrated external tool for ImageGlass v10.
 Copyright (C) 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
 MIT License
@@ -44,7 +44,7 @@ internal static class ConsoleHelper
                 var stderr = new StreamWriter(Console.OpenStandardError()) { AutoFlush = true };
                 Console.SetOut(stdout);
                 Console.SetError(stderr);
-                Console.Title = "ConsoleColorPicker — ImageGlass tool";
+                Console.Title = "ConsoleColorPicker – ImageGlass tool";
                 Log.Write("AllocConsole succeeded.");
             }
             else

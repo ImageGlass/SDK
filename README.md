@@ -8,16 +8,16 @@ The official development kit for extending **[ImageGlass](https://imageglass.org
 
 ## What you can build
 
-The two extension surfaces are independent — pick the one that matches what you want to build. Each has a step-by-step guide that builds a real sample from scratch.
+The two extension surfaces are independent – pick the one that matches what you want to build. Each has a step-by-step guide that builds a real sample from scratch.
 
 | You want to… | Build… | How it runs | Step-by-step guide |
 | --- | --- | --- | --- |
 | Add support for an **image format ImageGlass can't open** yet (a new or proprietary codec) | **Plugin** | Native, in-process codec loaded through a versioned C ABI | [Building a Native Codec Plugin](docs/codec-plugin-development.md) → covers the C ABI, decode pipeline, memory ownership, animation, and AOT publishing (builds [Base64Codec](samples/Base64Codec/)) |
-| **Add a feature** that reacts to the user — read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe | [Building an External Tool](docs/tool-development.md) → covers lifecycle hooks, the `HostApi`, real-time events, reading pixels, and registration (builds [ConsoleColorPicker](samples/ConsoleColorPicker/)) |
+| **Add a feature** that reacts to the user – read pixels under the cursor, inspect the current photo, drive the viewer, run host commands | **Tool** | Out-of-process program ImageGlass launches and drives over a named pipe | [Building an External Tool](docs/tool-development.md) → covers lifecycle hooks, the `HostApi`, real-time events, reading pixels, and registration (builds [ConsoleColorPicker](samples/ConsoleColorPicker/)) |
 
 A few concrete examples of what the SDK makes possible:
 
-- A codec that decodes a custom or rare image format and renders it like any built-in format — still or animated.
+- A codec that decodes a custom or rare image format and renders it like any built-in format – still or animated.
 - A color picker that reports the RGBA value under the user's click.
 - A batch/automation tool that watches photo navigation and runs actions against the current image, selection, or theme.
 
@@ -56,11 +56,11 @@ Supported platforms: `x64`, `ARM64`, `AnyCPU`.
 
 ## Samples
 
-The [`samples/`](samples/) folder contains complete, runnable projects — the fastest way to see each extension surface end to end. Each sample has its own README with build, install, and registration steps.
+The [`samples/`](samples/) folder contains complete, runnable projects – the fastest way to see each extension surface end to end. Each sample has its own README with build, install, and registration steps.
 
 | Sample | Surface | What it shows |
 | --- | --- | --- |
-| [Base64Codec](samples/Base64Codec/) | Plugin (codec) | A tiny cross-platform native codec that adds `.b64` support — reads a base64-encoded image, decodes it with SkiaSharp into a 32bpp BGRA buffer, and manages pixel-buffer memory through the ABI. Publishes as a Native AOT shared library. |
+| [Base64Codec](samples/Base64Codec/) | Plugin (codec) | A tiny cross-platform native codec that adds `.b64` support – reads a base64-encoded image, decodes it with SkiaSharp into a 32bpp BGRA buffer, and manages pixel-buffer memory through the ABI. Publishes as a Native AOT shared library. |
 | [ConsoleColorPicker](samples/ConsoleColorPicker/) | Tool | A console tool that connects over the named pipe, reads metadata of the current photo, follows photo navigation, and logs the RGBA value of the pixel the user clicks in the viewer via opt-in pointer events. |
 
 
@@ -94,10 +94,10 @@ It returns an `IGPluginApi` table (plugin identity + `GetCodec`/`Initialize`/`Sh
 
 Key contracts to honor:
 
-- **ABI version** — encoded as `MAJOR * 1_000_000 + MINOR * 1_000 + PATCH` (`IGNativeAbi.IG_PLUGIN_ABI_VERSION`). The host rejects plugins whose **major** version does not match.
-- **Memory ownership** — the plugin allocates pixel/animation buffers; the host calls back into the plugin's `FreePixelBuffer` / `FreeAnimationInfo` to release them. `FreePixelBuffer` **must be thread-safe** — it may be invoked from any thread when the host disposes the image.
-- **Animation** — decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not perform sub-rect composition or disposal/blend replay, so codecs like GIF/APNG must composite internally.
-- **Cancellation** — long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
+- **ABI version** – encoded as `MAJOR * 1_000_000 + MINOR * 1_000 + PATCH` (`IGNativeAbi.IG_PLUGIN_ABI_VERSION`). The host rejects plugins whose **major** version does not match.
+- **Memory ownership** – the plugin allocates pixel/animation buffers; the host calls back into the plugin's `FreePixelBuffer` / `FreeAnimationInfo` to release them. `FreePixelBuffer` **must be thread-safe** – it may be invoked from any thread when the host disposes the image.
+- **Animation** – decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not perform sub-rect composition or disposal/blend replay, so codecs like GIF/APNG must composite internally.
+- **Cancellation** – long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
 
 ### Installing the plugin
 
@@ -169,10 +169,10 @@ In the `Arguments` field of the `igconfig.json` entry you can use the `<file>` m
 ]
 ```
 
-- **`IsIntegrated`** — `true` makes this an SDK tool: ImageGlass launches the process with the `--pipe <name>` argument and wires up the two-way `HostApi` proxy, so the tool can use `ToolBase`/`HostApi` to talk to the host. Set it `false` (or omit it) for a plain external program that is just launched with its arguments and gets no pipe connection.
-- **`Hotkeys`** — an array of key-combination strings that run the tool when pressed in ImageGlass (e.g. `["Alt+1"]`, `["K"]`). Use an empty array `[]` if you don't want a shortcut.
+- **`IsIntegrated`** – `true` makes this an SDK tool: ImageGlass launches the process with the `--pipe <name>` argument and wires up the two-way `HostApi` proxy, so the tool can use `ToolBase`/`HostApi` to talk to the host. Set it `false` (or omit it) for a plain external program that is just launched with its arguments and gets no pipe connection.
+- **`Hotkeys`** – an array of key-combination strings that run the tool when pressed in ImageGlass (e.g. `["Alt+1"]`, `["K"]`). Use an empty array `[]` if you don't want a shortcut.
 
-`<file>` expands to the path **without quotes** — wrap it yourself as `"<file>"` when the path may contain spaces. The expanded value arrives in your tool's `args` (the `string[]` passed to `Main` / `RunAsync`).
+`<file>` expands to the path **without quotes** – wrap it yourself as `"<file>"` when the path may contain spaces. The expanded value arrives in your tool's `args` (the `string[]` passed to `Main` / `RunAsync`).
 
 Set `EnableDebug = true` and provide a `DebugLog` sink before calling `RunAsync` to trace pipe connection and message dispatch when a tool appears to "do nothing".
 

@@ -5,7 +5,7 @@ MIT License
 
 Demonstrates the IGNativeAbi with a minimal, cross-platform codec that reads a
 ".b64" text file, base64-decodes its contents back into the original image bytes
-(PNG / JPEG / WebP / ... — whatever was encoded), and decodes those bytes to
+(PNG / JPEG / WebP / ... – whatever was encoded), and decodes those bytes to
 32bpp premultiplied BGRA via SkiaSharp.
 
 A ".b64" file is just a text file holding a base64 string. Two shapes are

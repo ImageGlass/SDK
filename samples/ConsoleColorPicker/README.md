@@ -15,7 +15,7 @@ SDK's named-pipe channel and reacts to viewer events.
 ### Where the output goes
 
 ImageGlass is a GUI process, so a child launched with `UseShellExecute=false`
-inherits no console — `Console.WriteLine` alone would go nowhere. This sample
+inherits no console – `Console.WriteLine` alone would go nowhere. This sample
 therefore writes every line to a **log file** next to the executable:
 
 ```
@@ -34,7 +34,7 @@ dotnet build .\ConsoleColorPicker.csproj -c Debug
 
 The compiled exe lives in `bin\Debug\net10.0\ConsoleColorPicker.exe`.
 
-> The tool **must** be launched by ImageGlass — it expects a `--pipe <name>`
+> The tool **must** be launched by ImageGlass – it expects a `--pipe <name>`
 > argument. Running the exe directly logs a fatal error and exits with a
 > non-zero code.
 

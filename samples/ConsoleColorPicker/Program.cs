@@ -1,5 +1,5 @@
 /*
-ConsoleColorPicker — sample integrated external tool for ImageGlass v10.
+ConsoleColorPicker – sample integrated external tool for ImageGlass v10.
 Copyright (C) 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
 MIT License

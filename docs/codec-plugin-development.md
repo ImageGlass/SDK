@@ -1,6 +1,6 @@
 # Building a Native Codec Plugin
 
-This guide walks you through building a **native codec plugin** for ImageGlass 10 — an
+This guide walks you through building a **native codec plugin** for ImageGlass 10 – an
 in-process image decoder that teaches the host how to open a format it doesn't support
 yet. We'll build it end to end using the [`Base64Codec`](../samples/Base64Codec/) sample,
 which adds support for `.b64` files (text files holding a base64-encoded image).
@@ -14,29 +14,31 @@ publish and install a plugin.
 
 ## Contents
 
-- [How a plugin works](#how-a-plugin-works)
-- [Prerequisites](#prerequisites)
-- [Step 1 — Create the project](#step-1--create-the-project)
-- [Step 2 — Export the entry point](#step-2--export-the-entry-point)
-- [Step 3 — Advertise the codec's capabilities](#step-3--advertise-the-codecs-capabilities)
-- [Step 4 — Match files by extension](#step-4--match-files-by-extension)
-- [Step 5 — Load metadata](#step-5--load-metadata)
-- [Step 6 — Decode pixels](#step-6--decode-pixels)
-- [Step 7 — Free the buffer (thread-safe!)](#step-7--free-the-buffer-thread-safe)
-- [Step 8 — Honor cancellation](#step-8--honor-cancellation)
-- [Step 9 — Write the manifest](#step-9--write-the-manifest)
-- [Step 10 — Publish as a Native AOT shared library](#step-10--publish-as-a-native-aot-shared-library)
-- [Step 11 — Install and test](#step-11--install-and-test)
-- [Animated formats](#animated-formats)
-- [Rules you must not break](#rules-you-must-not-break)
-- [Troubleshooting](#troubleshooting)
-- [API reference](#api-reference)
+- [Building a Native Codec Plugin](#building-a-native-codec-plugin)
+  - [Contents](#contents)
+  - [How a plugin works](#how-a-plugin-works)
+  - [Prerequisites](#prerequisites)
+  - [Step 1 – Create the project](#step-1--create-the-project)
+  - [Step 2 – Export the entry point](#step-2--export-the-entry-point)
+  - [Step 3 – Advertise the codec's capabilities](#step-3--advertise-the-codecs-capabilities)
+  - [Step 4 – Match files by extension](#step-4--match-files-by-extension)
+  - [Step 5 – Load metadata](#step-5--load-metadata)
+  - [Step 6 – Decode pixels](#step-6--decode-pixels)
+  - [Step 7 – Free the buffer (thread-safe!)](#step-7--free-the-buffer-thread-safe)
+  - [Step 8 – Honor cancellation](#step-8--honor-cancellation)
+  - [Step 9 – Write the manifest](#step-9--write-the-manifest)
+  - [Step 10 – Publish as a Native AOT shared library](#step-10--publish-as-a-native-aot-shared-library)
+  - [Step 11 – Install and test](#step-11--install-and-test)
+  - [Animated formats](#animated-formats)
+  - [Rules you must not break](#rules-you-must-not-break)
+  - [Troubleshooting](#troubleshooting)
+  - [API reference](#api-reference)
 
 
 ## How a plugin works
 
 A plugin is a **native shared library** (`.dll` / `.so` / `.dylib`) that ImageGlass loads
-in-process via `NativeLibrary.Load`. There are no .NET interfaces across the boundary —
+in-process via `NativeLibrary.Load`. There are no .NET interfaces across the boundary –
 the host and plugin talk through a hand-rolled **C ABI**: `[StructLayout(LayoutKind.Sequential)]`
 structs full of `delegate* unmanaged[Cdecl]<...>` function pointers.
 
@@ -76,16 +78,16 @@ language-neutral.
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- The native AOT toolchain for your platform (a C compiler/linker — on Windows the
+- The native AOT toolchain for your platform (a C compiler/linker – on Windows the
   "Desktop development with C++" workload; on Linux/macOS `clang` and friends)
 - A reference to the `ImageGlass.SDK` package (it provides every `IG*` struct used below)
 
 
-## Step 1 — Create the project
+## Step 1 – Create the project
 
 A codec plugin is a C# project that publishes as a **native shared library**. The critical
 properties (`PublishAot`, `NativeLib`, `SelfContained`) turn a normal class library into a
-`.dll`/`.so`/`.dylib` with a real C export — see [`Base64Codec.csproj`](../samples/Base64Codec/Base64Codec.csproj):
+`.dll`/`.so`/`.dylib` with a real C export – see [`Base64Codec.csproj`](../samples/Base64Codec/Base64Codec.csproj):
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -136,13 +138,13 @@ Why each flag matters:
 | `SelfContained` | Bundles the runtime so the host doesn't need a matching .NET install. |
 | `AllowUnsafeBlocks` | The ABI is all pointers and `unsafe` code. |
 | `DisableRuntimeMarshalling` | Required so the function-pointer signatures pass blittable structs straight through with no marshalling layer. |
-| `AssemblyName` | Becomes the library filename — it **must** match `executable` in the manifest. |
+| `AssemblyName` | Becomes the library filename – it **must** match `executable` in the manifest. |
 
 Everything below lives in a single `static unsafe` class. The host never instantiates
 anything; it only calls your exported functions.
 
 
-## Step 2 — Export the entry point
+## Step 2 – Export the entry point
 
 Every plugin exports exactly one C function. Its name is fixed by the SDK as
 `IGNativeAbi.ENTRY_POINT_NAME` (`"ig_plugin_get_api"`). Mark it with
@@ -189,7 +191,7 @@ Three things to internalize here:
 
 2. **Everything you return must outlive the call.** The host keeps the `IGPluginApi*` and
    `IGCodecApi*` for the entire session. The sample allocates them once with
-   `NativeMemory.AllocZeroed` as process-lifetime blocks and never frees them — that's
+   `NativeMemory.AllocZeroed` as process-lifetime blocks and never frees them – that's
    correct, not a leak.
 
 3. **Stash `hostApi`.** It's how you log and poll for cancellation later (Steps 7–8).
@@ -226,14 +228,14 @@ private static IGStatus OnGetCodec(int index, IGCodecApi** outCodecApi)
 }
 ```
 
-> **Strings cross the ABI as `IGStringRef`** — a non-owning `(char* Data, int Length)`
+> **Strings cross the ABI as `IGStringRef`** – a non-owning `(char* Data, int Length)`
 > slice of UTF-16. The sample pre-allocates every string it hands to the host into
 > process-lifetime native buffers (`InitStrings` / `AllocUtf16`) because those strings must
 > stay valid for as long as the host might read them. Don't hand the host a pointer into a
 > managed string or a stack buffer.
 
 
-## Step 3 — Advertise the codec's capabilities
+## Step 3 – Advertise the codec's capabilities
 
 `GetCapability` tells the host what this codec can do and which extensions it owns. The
 host uses it both when probing a file and when choosing between competing codecs:
@@ -278,12 +280,12 @@ The capability flags must match reality: if you set `SupportsAnimation = 1` you 
 provide all three animation function pointers, or the host downgrades the flag to 0.
 
 
-## Step 4 — Match files by extension
+## Step 4 – Match files by extension
 
 The host asks each codec whether it recognizes a file. There are two probes:
 
-- `CanHandleExtension(IGStringRef ext)` — match by file extension (lowercase, leading dot).
-- `CanHandleSignature(byte* sig, int len)` — optional content sniffing (magic bytes). May be `null`.
+- `CanHandleExtension(IGStringRef ext)` – match by file extension (lowercase, leading dot).
+- `CanHandleSignature(byte* sig, int len)` – optional content sniffing (magic bytes). May be `null`.
 
 A `.b64` file is just text with no reliable magic number, so the sample matches by
 extension only and leaves `CanHandleSignature` null:
@@ -326,10 +328,10 @@ private static void InitCodecApi()
 ```
 
 
-## Step 5 — Load metadata
+## Step 5 – Load metadata
 
 Before decoding pixels the host wants the basics: dimensions, pixel format, alpha, frame
-count, color space. `LoadMetadata` fills an `IGImageInfo` without allocating any pixels —
+count, color space. `LoadMetadata` fills an `IGImageInfo` without allocating any pixels –
 it should be cheap.
 
 ```csharp
@@ -366,14 +368,14 @@ Notes:
 
 - **`PixelFormat`** must be one of `IGPixelFormat` (`Bgra8Unorm`, `Rgba8Unorm`,
   `Rgba16Unorm`, `RgbaFloat16`). The sample decodes everything to `Bgra8Unorm`.
-- **Color management:** set `ColorSpace` to one of `IGColorSpace`, or — for arbitrary
-  profiles like ProPhoto RGB — point `IccProfileData`/`IccProfileSize` at the raw ICC bytes
+- **Color management:** set `ColorSpace` to one of `IGColorSpace`, or – for arbitrary
+  profiles like ProPhoto RGB – point `IccProfileData`/`IccProfileSize` at the raw ICC bytes
   and the host builds the color space from them. The plugin keeps ownership; the host reads
   the bytes synchronously inside this call.
 - **`FrameCount`** drives whether the host treats this as multi-frame. Report the real count.
 
 
-## Step 6 — Decode pixels
+## Step 6 – Decode pixels
 
 `DecodeStaticRaster` is the heart of the codec: read the file, produce pixels, hand the
 host a buffer **you allocated**.
@@ -449,12 +451,12 @@ Key points:
   `FreePixelBuffer`. Use it to identify exactly what to free. The sample also keeps a
   `Dictionary<nint, nint>` keyed by the pixel pointer as bookkeeping.
 - **Return the right status on failure**, and **free anything you allocated before
-  returning a failure** — the host won't call `FreePixelBuffer` for a call that didn't
+  returning a failure** – the host won't call `FreePixelBuffer` for a call that didn't
   return `OK`. The full `IGStatus` set: `OK`, `Unsupported`, `Canceled`, `InvalidArg`,
   `DecodeFailed`, `OutOfMemory`, `Internal`, `NotImplemented`, `IoError`.
 
 
-## Step 7 — Free the buffer (thread-safe!)
+## Step 7 – Free the buffer (thread-safe!)
 
 The host calls `FreePixelBuffer` to release a buffer you returned. **This must be
 thread-safe.** ImageGlass hands your pixels to SkiaSharp via
@@ -485,23 +487,23 @@ from the map first, bail if absent) is cheap insurance.
 > **The cardinal memory rule: whoever allocates, frees.** The plugin allocates pixel and
 > animation buffers; the host calls back into your `FreePixelBuffer` / `FreeAnimationInfo`
 > to release them. Never free a buffer the host gave you, and never expect the host to
-> `free()` a pointer with an allocator it doesn't know about — that's why you free your own.
+> `free()` a pointer with an allocator it doesn't know about – that's why you free your own.
 
 > **`FreePixelBuffer` is best-effort, not guaranteed for every buffer.** At host shutdown
 > (or when the host reloads your plugin) the host may unload your library while images
 > backed by your buffers are still alive. In that case the host **skips** the remaining
-> `FreePixelBuffer` calls — unloading the library reclaims your buffers with it. So free
+> `FreePixelBuffer` calls – unloading the library reclaims your buffers with it. So free
 > only memory you allocated inside the library. Do **not** rely on `FreePixelBuffer` to run
 > for externally-observable cleanup (temp files, sockets, host callbacks); use `Shutdown`
 > for that, and note `Shutdown` can be called while buffers are still outstanding.
 
 
-## Step 8 — Honor cancellation
+## Step 8 – Honor cancellation
 
 Long decodes receive an **opaque cancellation token** (`void* cancellation`). You can't
-inspect it — you poll the host through `IGHostCoreApi.IsCancellationRequested` and bail with
+inspect it – you poll the host through `IGHostCoreApi.IsCancellationRequested` and bail with
 `IGStatus.Canceled` when it returns non-zero. Check it at coarse boundaries (after I/O,
-before a big allocation, between frames) — not in a tight per-pixel loop.
+before a big allocation, between frames) – not in a tight per-pixel loop.
 
 ```csharp
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -517,7 +519,7 @@ private static bool IsCanceled(void* cancellation)
 if (IsCanceled(cancellation)) return IGStatus.Canceled;
 ```
 
-The same `IGHostCoreApi` table gives you a host log channel — handy when a decode misbehaves
+The same `IGHostCoreApi` table gives you a host log channel – handy when a decode misbehaves
 in the field:
 
 ```csharp
@@ -532,11 +534,11 @@ private static void Log(int level, string message)   // 0=trace 1=debug 2=info 3
 ```
 
 
-## Step 9 — Write the manifest
+## Step 9 – Write the manifest
 
 A plugin ships as a **folder** containing the native library and an `igplugin.json` manifest
 ([`PluginManifest`](../source/Plugins/PluginManifest.cs)). The host scans for this file to
-discover the plugin — see [`igplugin.json`](../samples/Base64Codec/igplugin.json):
+discover the plugin – see [`igplugin.json`](../samples/Base64Codec/igplugin.json):
 
 ```jsonc
 {
@@ -562,7 +564,7 @@ Required fields are `id`, `name`, and `executable`. A few rules:
   plugin-reported list. This lets a user widen or restrict a codec's scope without a rebuild.
 
 
-## Step 10 — Publish as a Native AOT shared library
+## Step 10 – Publish as a Native AOT shared library
 
 Publish for each platform/architecture you want to support. AOT publish emits the native
 library next to its dependencies:
@@ -591,7 +593,7 @@ The output folder contains `Base64Codec.dll` (or `.so`/`.dylib`), the copied
 `libSkiaSharp`).
 
 
-## Step 11 — Install and test
+## Step 11 – Install and test
 
 Copy the **entire published folder** into the `_plugins` directory of ImageGlass's
 **config directory**. The config directory depends on your platform:
@@ -603,11 +605,11 @@ Copy the **entire published folder** into the `_plugins` directory of ImageGlass
 | macOS | `/Users/<username>/Library/Application Support/ImageGlass` |
 
 The plugin folder goes under `_plugins`, and the `igplugin.json` manifest **must** sit in
-that folder — e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sample on Windows:
+that folder – e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sample on Windows:
 
 ```text
 %LocalAppData%\ImageGlass\_plugins\Base64Codec\
-    igplugin.json           # the manifest — must be here
+    igplugin.json           # the manifest – must be here
     Base64Codec.dll
     libSkiaSharp.dll        # the native dependency emitted by AOT publish
 ```
@@ -625,7 +627,7 @@ Make a test file from any image and open it:
     | Set-Content -NoNewline test.b64
 ```
 
-Open `test.b64` in ImageGlass — it renders as the original image. If it doesn't, see
+Open `test.b64` in ImageGlass – it renders as the original image. If it doesn't, see
 [Troubleshooting](#troubleshooting).
 
 
@@ -636,20 +638,20 @@ The sample is static-only, but the ABI fully supports animation. To add it:
 1. Set `SupportsAnimation = 1` in `GetCapability`.
 2. Provide **all three** animation function pointers in `InitCodecApi` (the host downgrades
    the flag to 0 if any is null):
-   - `GetAnimationInfo(path, IGAnimationInfo* out, cancellation)` — fill `FrameCount`,
+   - `GetAnimationInfo(path, IGAnimationInfo* out, cancellation)` – fill `FrameCount`,
      `LoopCount` (0 = infinite), and allocate the `Frames` array (one
      `IGAnimationFrameInfo` per frame, with `DurationMs` and `HasAlpha`). The host releases
      it via `FreeAnimationInfo`.
-   - `DecodeAnimationFrame(path, frameIndex, IGPixelBuffer* out, cancellation)` — same
+   - `DecodeAnimationFrame(path, frameIndex, IGPixelBuffer* out, cancellation)` – same
      contract as `DecodeStaticRaster`, freed by the same `FreePixelBuffer`.
-   - `FreeAnimationInfo(IGAnimationInfo* info)` — release the `Frames` allocation.
+   - `FreeAnimationInfo(IGAnimationInfo* info)` – release the `Frames` allocation.
 
 > **Critical animation rule: every decoded frame must be a fully composed RGBA image at the
 > full canvas size.** The host does **not** do sub-rect composition or disposal/blend
 > replay. Codecs whose native frame stream is sub-rect (GIF, APNG) must composite each frame
 > against the previous ones *internally* before returning it, honoring the format's disposal
 > rules. The `IGAnimationFrameInfo` struct intentionally has no sub-rect/blend/disposal
-> fields — that work is yours.
+> fields – that work is yours.
 
 
 ## Rules you must not break
@@ -661,17 +663,17 @@ host" or "works on my machine but not in production."
   The host **rejects** plugins whose **major** version differs. Adding fields to the *end* of
   an existing struct is a minor (backward-compatible) change; **reordering, inserting, or
   removing fields is breaking**. The `StructSize` fields exist so the host can validate
-  layout — always set them.
+  layout – always set them.
 - **Memory ownership.** Whoever allocates frees. You allocate pixel/animation buffers; the
   host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
-- **`FreePixelBuffer` must be thread-safe** — Skia may call it from any thread on dispose.
+- **`FreePixelBuffer` must be thread-safe** – Skia may call it from any thread on dispose.
 - **`FreePixelBuffer` is not guaranteed to run for every buffer.** If the host unloads your
   library (shutdown/reload) while buffers are outstanding, it skips the remaining frees; the
-  unload reclaims them. Free only in-library memory there — never rely on it for external cleanup.
+  unload reclaims them. Free only in-library memory there – never rely on it for external cleanup.
 - **Animation frames are fully composed RGBA at full canvas size.** No host-side compositing.
 - **Cancellation** is an opaque `void*`; poll `IGHostCoreApi.IsCancellationRequested` and
   return `IGStatus.Canceled`.
-- **Strings handed to the host (`IGStringRef`) must stay valid long enough** — capability
+- **Strings handed to the host (`IGStringRef`) must stay valid long enough** – capability
   strings and extensions for the plugin's lifetime; the sample pre-allocates them as
   process-lifetime buffers.
 - **Free your own allocations on the failure path.** The host only calls `FreePixelBuffer`
@@ -689,10 +691,10 @@ host" or "works on my machine but not in production."
 | Host loads it but the file won't open | `CanHandleExtension` returned 0 for that extension, or a built-in codec out-bid your `DecodePriority`. Raise the priority or check the extension string (lowercase, leading dot). |
 | Crash on close / intermittent crash | `FreePixelBuffer` isn't thread-safe, or you freed a buffer you'd already freed. Use the remove-from-map-first guard. |
 | Garbled / shifted pixels | Wrong `Stride` or `PixelFormat`. `Stride` must be ≥ `Width * bytesPerPixel` and match the actual buffer layout. |
-| Animation flickers / ghosts | Frames aren't fully composed at full canvas size — you're emitting raw sub-rects. Composite internally. |
+| Animation flickers / ghosts | Frames aren't fully composed at full canvas size – you're emitting raw sub-rects. Composite internally. |
 | Works in `dotnet run`, not when published | You're testing the managed assembly, not the AOT-published native library. Always test the published `.dll`/`.so`/`.dylib`. |
 
-Use the host log channel (`IGHostCoreApi.Log`) liberally during development — it's your
+Use the host log channel (`IGHostCoreApi.Log`) liberally during development – it's your
 only window into a plugin running inside the host process.
 
 
@@ -701,16 +703,16 @@ only window into a plugin running inside the host process.
 Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
 
 **Entry point & versioning**
-- [`IGNativeAbi`](../source/Plugins/Native/ABI/IGNativeAbi.cs) — `ENTRY_POINT_NAME`,
+- [`IGNativeAbi`](../source/Plugins/Native/ABI/IGNativeAbi.cs) – `ENTRY_POINT_NAME`,
   `IG_PLUGIN_ABI_VERSION`, `IG_PLUGIN_ABI_MAJOR`.
 
 **API tables (function-pointer structs)**
-- [`IGHostApi`](../source/Plugins/Native/API/IGHostApi.cs) — top-level host table (→ `Core`).
-- [`IGHostCoreApi`](../source/Plugins/Native/API/IGHostCoreApi.cs) — `Log`, `Alloc`/`Free`,
+- [`IGHostApi`](../source/Plugins/Native/API/IGHostApi.cs) – top-level host table (→ `Core`).
+- [`IGHostCoreApi`](../source/Plugins/Native/API/IGHostCoreApi.cs) – `Log`, `Alloc`/`Free`,
   `IsCancellationRequested`, `GetConfigDirectory`.
-- [`IGPluginApi`](../source/Plugins/Native/API/IGPluginApi.cs) — `GetCodec`, `Initialize`,
+- [`IGPluginApi`](../source/Plugins/Native/API/IGPluginApi.cs) – `GetCodec`, `Initialize`,
   `Shutdown`, `SelfTest`.
-- [`IGCodecApi`](../source/Plugins/Native/API/IGCodecApi.cs) — `GetCapability`,
+- [`IGCodecApi`](../source/Plugins/Native/API/IGCodecApi.cs) – `GetCapability`,
   `CanHandleExtension`, `CanHandleSignature`, `LoadMetadata`, `DecodeStaticRaster`,
   `FreePixelBuffer`, and the animation trio.
 
@@ -728,6 +730,6 @@ Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
   [`IGPluginKind`](../source/Plugins/Native/ABI/IGPluginKind.cs)
 
 **Manifest**
-- [`PluginManifest`](../source/Plugins/PluginManifest.cs) — the `igplugin.json` schema.
+- [`PluginManifest`](../source/Plugins/PluginManifest.cs) – the `igplugin.json` schema.
 
 **Full sample:** [`samples/Base64Codec`](../samples/Base64Codec/)
