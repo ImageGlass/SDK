@@ -14,9 +14,10 @@ namespace ImageGlass.SDK.Plugins;
 /// and the host MUST release the entire structure via <c>IGCodecApi.FreeAnimationInfo</c>.
 /// <para>
 /// Each <c>DecodeAnimationFrame</c> call is required to return a fully composed
-/// RGBA frame at the full canvas size. The host does not run any sub-rect
-/// composition or disposal/blend replay -- plugins that would otherwise emit
-/// raw sub-rect frames must composite internally.
+/// RGBA frame. The host does not run any sub-rect composition or disposal/blend
+/// replay -- plugins that would otherwise emit raw sub-rect frames must
+/// composite internally. Frames may differ in size; the host adopts each
+/// frame's own dimensions and re-fits the viewport.
 /// </para>
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]

@@ -13,10 +13,18 @@ namespace ImageGlass.SDK.Plugins;
 /// All booleans use <see cref="int"/> to stay strictly POD across the ABI.
 /// <para>
 /// The host always treats <c>DecodeAnimationFrame</c> output as a fully
-/// composed RGBA frame at the full canvas size, so this struct does not
-/// describe sub-rect placement, blend operation, or disposal. Plugins that
-/// would otherwise emit raw sub-rect frames must run their own composition
-/// (matching the codec's disposal rules) before returning the buffer.
+/// composed RGBA frame, so this struct does not describe sub-rect placement,
+/// blend operation, or disposal. Plugins that would otherwise emit raw
+/// sub-rect frames must run their own composition (matching the codec's
+/// disposal rules) before returning the buffer. Frames need not share one
+/// size: the host reads each frame's dimensions from the returned pixel
+/// buffer and re-fits the viewport when they change.
+/// </para>
+/// <para>
+/// MAINTENANCE WARNING: this struct must never gain fields. The plugin
+/// allocates the <c>Frames</c> array and the host walks it with its own
+/// <c>sizeof</c>, so growing it would silently cause out-of-bounds reads
+/// from every previously built plugin.
 /// </para>
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]

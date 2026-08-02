@@ -646,12 +646,37 @@ The sample is static-only, but the ABI fully supports animation. To add it:
      contract as `DecodeStaticRaster`, freed by the same `FreePixelBuffer`.
    - `FreeAnimationInfo(IGAnimationInfo* info)` – release the `Frames` allocation.
 
-> **Critical animation rule: every decoded frame must be a fully composed RGBA image at the
-> full canvas size.** The host does **not** do sub-rect composition or disposal/blend
-> replay. Codecs whose native frame stream is sub-rect (GIF, APNG) must composite each frame
-> against the previous ones *internally* before returning it, honoring the format's disposal
-> rules. The `IGAnimationFrameInfo` struct intentionally has no sub-rect/blend/disposal
-> fields – that work is yours.
+> **Critical animation rule: every decoded frame must be a fully composed RGBA image.** The
+> host does **not** do sub-rect composition or disposal/blend replay. Codecs whose native
+> frame stream is sub-rect (GIF, APNG) must composite each frame against the previous ones
+> *internally* before returning it, honoring the format's disposal rules. The
+> `IGAnimationFrameInfo` struct intentionally has no sub-rect/blend/disposal fields – that
+> work is yours.
+
+Frames do **not** have to share one size. The host reads each decoded frame's dimensions
+from the `IGPixelBuffer` you return and, when they differ from the previous frame, re-fits
+the viewport to that frame: the zoom mode is re-applied, the frame is centered, and the
+titlebar dimensions follow it. This lets an animated format act as an image container – one
+file holding several unrelated images. Frames of a single fixed-size timeline are the common
+case and behave exactly as before.
+
+What still holds: each frame is composed on its own canvas, so a frame *is* its full canvas.
+There is no per-frame X/Y placement inside a larger canvas – the ABI carries no offset
+fields, and adding them would be a breaking change.
+
+The `Width`/`Height` you report from `LoadMetadata` seed the viewport before the first frame
+arrives; reporting frame 0's size there avoids a visible correction on the first frame.
+
+### Animation vs multi-page
+
+Pick the path by how the frames are meant to be consumed:
+
+- **Timeline** (per-frame delays, auto-advance): the animation path above –
+  `SupportsAnimation = 1` plus the three animation entry points.
+- **User-stepped container** (pages, unrelated images, no timing): report `FrameCount > 1`
+  from `LoadMetadata` and leave `SupportsAnimation = 0`. The host treats it as a multi-page
+  document, steps frames on user command, and decodes each through `DecodeStaticRaster`,
+  so per-frame sizing already works there.
 
 
 ## Rules you must not break
@@ -670,7 +695,11 @@ host" or "works on my machine but not in production."
 - **`FreePixelBuffer` is not guaranteed to run for every buffer.** If the host unloads your
   library (shutdown/reload) while buffers are outstanding, it skips the remaining frees; the
   unload reclaims them. Free only in-library memory there – never rely on it for external cleanup.
-- **Animation frames are fully composed RGBA at full canvas size.** No host-side compositing.
+- **Animation frames are fully composed RGBA.** No host-side compositing, no sub-rect output,
+  no disposal/blend replay.
+- **Animation frames may differ in size.** The host adopts each frame's own dimensions and
+  re-fits the viewport. Uniform sizing is no longer required – but a frame is always its own
+  full canvas; there is no placement offset inside a larger one.
 - **Cancellation** is an opaque `void*`; poll `IGHostCoreApi.IsCancellationRequested` and
   return `IGStatus.Canceled`.
 - **Strings handed to the host (`IGStringRef`) must stay valid long enough** – capability
@@ -691,7 +720,8 @@ host" or "works on my machine but not in production."
 | Host loads it but the file won't open | `CanHandleExtension` returned 0 for that extension, or a built-in codec out-bid your `DecodePriority`. Raise the priority or check the extension string (lowercase, leading dot). |
 | Crash on close / intermittent crash | `FreePixelBuffer` isn't thread-safe, or you freed a buffer you'd already freed. Use the remove-from-map-first guard. |
 | Garbled / shifted pixels | Wrong `Stride` or `PixelFormat`. `Stride` must be ≥ `Width * bytesPerPixel` and match the actual buffer layout. |
-| Animation flickers / ghosts | Frames aren't fully composed at full canvas size – you're emitting raw sub-rects. Composite internally. |
+| Animation flickers / ghosts | Frames aren't fully composed – you're emitting raw sub-rects. Composite internally. |
+| Frames of differing sizes render pinned top-left, with empty space or cropped | An ImageGlass build older than per-frame viewport re-fitting. Update the host; no plugin rebuild is needed. |
 | Works in `dotnet run`, not when published | You're testing the managed assembly, not the AOT-published native library. Always test the published `.dll`/`.so`/`.dylib`. |
 
 Use the host log channel (`IGHostCoreApi.Log`) liberally during development – it's your

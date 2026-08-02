@@ -103,10 +103,16 @@ public unsafe struct IGCodecApi
     /// <c>outBuffer</c>; the host releases it via the codec's existing
     /// <see cref="FreePixelBuffer"/>.
     /// <para>
-    /// The buffer MUST hold a fully composed RGBA frame at the full canvas size.
-    /// The host does not run sub-rect composition or disposal/blend replay --
-    /// plugins for codecs whose native frame stream is sub-rect (e.g. GIF, APNG)
-    /// must composite internally before returning.
+    /// The buffer MUST hold a fully composed RGBA frame. The host does not run
+    /// sub-rect composition or disposal/blend replay -- plugins for codecs whose
+    /// native frame stream is sub-rect (e.g. GIF, APNG) must composite internally
+    /// before returning.
+    /// </para>
+    /// <para>
+    /// Frames may differ in size. The host reads each frame's dimensions from
+    /// <c>outBuffer</c> and re-fits the viewport when they change, so an animated
+    /// format can act as a container of unrelated images. A frame is still always
+    /// its own full canvas -- there is no placement offset inside a larger one.
     /// </para>
     /// Signature: <c>IGStatus DecodeAnimationFrame(IGStringRef filePath, int frameIndex, IGPixelBuffer* outBuffer, void* cancellation)</c>.
     /// </summary>
