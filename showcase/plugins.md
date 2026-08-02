@@ -15,7 +15,8 @@ Explore the community plugins listed below.
 
 | Plugin | Type | Author | Description | Platforms |
 | :--- | :--- | :--- | :--- | :--- |
-| [ImageGlass Ithmb Plugin](https://github.com/B67687/Imageglass-Ithmb-Plugin) | Codec | [B67687](https://github.com/B67687) | C ABI plugin to decode `.ithmb` thumbnail files using [Ithmb-Codec](https://github.com/B67687/Ithmb-Codec). | 🪟 🍎 🐧 |
+| [ITHMB Codec](https://github.com/B67687/Imageglass-Ithmb-Plugin) | Codec | [B67687](https://github.com/B67687) | C ABI plugin to decode `.ithmb` thumbnail files using [Ithmb-Codec](https://github.com/B67687/Ithmb-Codec) | 🪟 🍎 🐧 |
+| [APNG Codec](https://github.com/d2phap/apng-imageglass-plugin) | Codec | [d2phap](https://github.com/d2phap) | Animated APNG codec plugin for ImageGlass | 🪟 🍎 🐧 |
 
 
 ## FAQs
