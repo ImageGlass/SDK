@@ -11,30 +11,55 @@ namespace ImageGlass.SDK.Plugins;
 /// </summary>
 public enum IGStatus : int
 {
-    /// <summary>The operation completed successfully.</summary>
+    /// <summary>
+    /// The operation completed successfully.
+    /// </summary>
     OK = 0,
 
-    /// <summary>The requested operation or format is not supported by this codec.</summary>
+    /// <summary>
+    /// The requested operation or format is not supported by this codec.
+    /// </summary>
     Unsupported = 1,
 
-    /// <summary>The operation was canceled via the host cancellation token.</summary>
+    /// <summary>
+    /// The operation was canceled via the host cancellation token.
+    /// </summary>
     Canceled = 2,
 
-    /// <summary>One or more arguments were invalid (e.g. out-of-range frame index).</summary>
+    /// <summary>
+    /// One or more arguments were invalid (e.g. out-of-range frame index).
+    /// </summary>
     InvalidArg = 3,
 
-    /// <summary>Decoding failed (e.g. corrupt or truncated input).</summary>
+    /// <summary>
+    /// Decoding failed (e.g. corrupt or truncated input).
+    /// </summary>
     DecodeFailed = 4,
 
-    /// <summary>A memory allocation failed.</summary>
+    /// <summary>
+    /// A memory allocation failed.
+    /// </summary>
     OutOfMemory = 5,
 
-    /// <summary>An unexpected internal error occurred inside the plugin.</summary>
+    /// <summary>
+    /// An unexpected internal error occurred inside the plugin.
+    /// </summary>
     Internal = 6,
 
-    /// <summary>The called entry point is not implemented.</summary>
+    /// <summary>
+    /// The called entry point is not implemented.
+    /// </summary>
     NotImplemented = 7,
 
-    /// <summary>A file or stream I/O error occurred.</summary>
+    /// <summary>
+    /// A file or stream I/O error occurred.
+    /// </summary>
     IoError = 8,
+
+    /// <summary>
+    /// Encoding failed: the encoder ran but could not produce valid output.
+    /// Use <see cref="IoError"/> instead when the destination file could not be
+    /// created, written, or closed.
+    /// </summary>
+    EncodeFailed = 9,
 }

@@ -26,6 +26,14 @@ namespace ImageGlass.SDK.Plugins;
 /// <c>sizeof</c>, so growing it would silently cause out-of-bounds reads
 /// from every previously built plugin.
 /// </para>
+/// <para>
+/// That restriction follows from WHO ALLOCATES THE ARRAY, not from the struct
+/// being an ABI type: there is no <c>StructSize</c> to bound the stride, and a
+/// stride mismatch misaligns every element. Structs the host allocates one of
+/// and passes by pointer (<see cref="IGEncodeFrameInfo"/>,
+/// <see cref="IGMultiFrameEncodeInfo"/>, <see cref="IGEncodeOptions"/>) carry a
+/// <c>StructSize</c> and MAY gain trailing fields.
+/// </para>
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct IGAnimationFrameInfo
@@ -36,6 +44,8 @@ public struct IGAnimationFrameInfo
     /// </summary>
     public int DurationMs;
 
-    /// <summary>1 = this frame has alpha.</summary>
+    /// <summary>
+    /// 1 = this frame has alpha.
+    /// </summary>
     public int HasAlpha;
 }

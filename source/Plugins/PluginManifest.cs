@@ -10,6 +10,13 @@ namespace ImageGlass.SDK.Plugins;
 /// JSON metadata for a native plugin, read from <c>igplugin.json</c>.
 /// Native plugins are loaded in-process via <c>NativeLibrary.Load</c> and the C ABI in
 /// <see cref="IGNativeAbi"/>.
+/// <para>
+/// This is developer-authored identity metadata only, and it is immutable in both senses: every
+/// member is <c>init</c>-only, and the host never writes the file. It carries no file-extension
+/// list, because a codec's readable and writable formats are declared in code through
+/// <see cref="IGCodecCapability"/> (<c>DecodeExtensions</c> / <c>EncodeExtensions</c>) and are
+/// narrowed per user in the host's own settings, never by editing this file.
+/// </para>
 /// </summary>
 public sealed class PluginManifest
 {
@@ -54,18 +61,6 @@ public sealed class PluginManifest
     /// (e.g. <c>MyPlugin.dll</c>, <c>libMyPlugin.so</c>, <c>MyPlugin.dylib</c>).
     /// </summary>
     public required string Executable { get; init; }
-
-    /// <summary>
-    /// Optional semicolon-separated list of file extensions the codec should
-    /// handle (e.g. <c>".jpg;.jpeg;.tif"</c>). When empty, the host falls back
-    /// to the extensions the plugin reports through its
-    /// <c>IGCodecCapability</c>. When non-empty, this list overrides the
-    /// plugin-reported list, allowing users to add or restrict the codec's
-    /// scope without rebuilding the plugin. Entries are normalized to
-    /// lowercase and a leading dot is added if missing.
-    /// </summary>
-    public string SupportedExtensions { get; init; } = string.Empty;
-
 
     /// <summary>
     /// Gets the plugin manifest filename.

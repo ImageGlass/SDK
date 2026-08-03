@@ -9,6 +9,14 @@ namespace ImageGlass.SDK.Plugins;
 /// <summary>
 /// Versioning constants and the well-known native entry-point name for the
 /// in-process native plugin ABI.
+/// <para>
+/// NOTE: the v1 contract was revised in place when encoding support was added
+/// (encode entry points, <c>StructSize</c> on <see cref="IGCodecApi"/> and
+/// <see cref="IGCodecCapability"/>, a pointer-returning <c>GetCapability</c>, and
+/// renamed capability flags). The version was deliberately NOT bumped, so every
+/// plugin must be rebuilt against this SDK. A plugin built against the earlier
+/// contract is refused per codec by the <c>IGCodecApi.StructSize</c> check.
+/// </para>
 /// </summary>
 public static class IGNativeAbi
 {

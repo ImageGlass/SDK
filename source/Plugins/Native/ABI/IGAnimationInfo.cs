@@ -23,10 +23,14 @@ namespace ImageGlass.SDK.Plugins;
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct IGAnimationInfo
 {
-    /// <summary>Total frame count (>= 1).</summary>
+    /// <summary>
+    /// Total frame count (>= 1).
+    /// </summary>
     public int FrameCount;
 
-    /// <summary>0 = infinite loop. Otherwise the number of full play-throughs.</summary>
+    /// <summary>
+    /// 0 = infinite loop. Otherwise the number of full play-throughs.
+    /// </summary>
     public int LoopCount;
 
     /// <summary>

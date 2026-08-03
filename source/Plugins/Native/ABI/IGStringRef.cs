@@ -13,14 +13,28 @@ namespace ImageGlass.SDK.Plugins;
 /// UTF-16 string slice. The pointer is non-owning; the producing side controls the lifetime.
 /// Strings passed from host -> plugin live until the call returns.
 /// Strings passed from plugin -> host live until the next plugin call on that codec.
+/// <para>
+/// C/C++/Rust authors: <see cref="Data"/> is <c>char16_t*</c>, NOT <c>char*</c>. The C# type
+/// <c>char</c> is a 16-bit UTF-16 code unit, so the C declaration is:
+/// <code>
+/// typedef struct IGStringRef { const char16_t* Data; int32_t Length; } IGStringRef;
+/// </code>
+/// Transcribing it as <c>char*</c> yields half-width strings and garbage lengths.
+/// </para>
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct IGStringRef
 {
-    /// <summary>Pointer to UTF-16 code units. May be null when <see cref="Length"/> is 0.</summary>
+    /// <summary>
+    /// Pointer to UTF-16 code units (<c>char16_t*</c> in C, 2 bytes per unit).
+    /// May be null when <see cref="Length"/> is 0.
+    /// </summary>
     public char* Data;
 
-    /// <summary>Number of UTF-16 code units (not bytes). Must be non-negative.</summary>
+    /// <summary>
+    /// Number of UTF-16 code units, NOT bytes: the byte length is <c>Length * 2</c>.
+    /// Must be non-negative. The slice is not null-terminated.
+    /// </summary>
     public int Length;
 }
 

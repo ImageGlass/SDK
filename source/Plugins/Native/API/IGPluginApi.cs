@@ -17,14 +17,19 @@ public unsafe struct IGPluginApi
 {
     /// <summary>
     /// Size of this struct in bytes. Plugins set this to <c>sizeof(IGPluginApi)</c> at the time
-    /// they were compiled. The host validates this matches its expected size for the negotiated ABI.
+    /// they were compiled. The host reads no member beyond it and rejects the plugin if the value
+    /// is outside the range it understands.
     /// </summary>
     public int StructSize;
 
-    /// <summary>ABI version the plugin was built against. Must match the host's major version.</summary>
+    /// <summary>
+    /// ABI version the plugin was built against. Must match the host's major version.
+    /// </summary>
     public int AbiVersion;
 
-    /// <summary>Identity of the plugin.</summary>
+    /// <summary>
+    /// Identity of the plugin.
+    /// </summary>
     public IGPluginInfo Info;
 
     /// <summary>

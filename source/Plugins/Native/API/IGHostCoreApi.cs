@@ -41,8 +41,13 @@ public unsafe struct IGHostCoreApi
 
     /// <summary>
     /// Returns the absolute UTF-16 path of the host's config directory into the buffer.
-    /// Signature: <c>int GetConfigDirectory(char* buffer, int bufferLength)</c>.
+    /// Signature: <c>int32_t GetConfigDirectory(char16_t* buffer, int32_t bufferLengthInCodeUnits)</c>.
     /// Returns the number of code units written, or the required size if the buffer is too small.
+    /// <para>
+    /// The buffer holds <c>char16_t</c> (2 bytes per unit), NOT bytes, and the length is counted in
+    /// code units: allocate <c>bufferLengthInCodeUnits * 2</c> bytes. The result is not
+    /// null-terminated.
+    /// </para>
     /// </summary>
     public delegate* unmanaged[Cdecl]<char*, int, int> GetConfigDirectory;
 }

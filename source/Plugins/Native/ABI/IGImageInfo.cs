@@ -14,16 +14,24 @@ namespace ImageGlass.SDK.Plugins;
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct IGImageInfo
 {
-    /// <summary>Image width in pixels.</summary>
+    /// <summary>
+    /// Image width in pixels.
+    /// </summary>
     public int Width;
 
-    /// <summary>Image height in pixels.</summary>
+    /// <summary>
+    /// Image height in pixels.
+    /// </summary>
     public int Height;
 
-    /// <summary>One of <see cref="IGPixelFormat"/>.</summary>
+    /// <summary>
+    /// One of <see cref="IGPixelFormat"/>.
+    /// </summary>
     public int PixelFormat;
 
-    /// <summary>1 if the source carries an alpha channel.</summary>
+    /// <summary>
+    /// 1 if the source carries an alpha channel.
+    /// </summary>
     public int HasAlpha;
 
     /// <summary>
@@ -41,14 +49,24 @@ public unsafe struct IGImageInfo
     /// </summary>
     public int ColorSpace;
 
-    /// <summary>EXIF orientation (1..8); 0 means unknown.</summary>
+    /// <summary>
+    /// EXIF orientation (1..8); 0 means unknown.
+    /// </summary>
     public int Orientation;
 
-    /// <summary>Frame count (>= 1). Plugins that support multi-frame decoding
-    /// must report the actual frame count here.</summary>
+    /// <summary>
+    /// Frame count (>= 1). Plugins that support multi-frame decoding
+    /// must report the actual frame count here.
+    /// </summary>
     public int FrameCount;
 
-    /// <summary>Source file size in bytes. -1 if unknown.</summary>
+    /// <summary>
+    /// Source file size in bytes. -1 if unknown.
+    /// <para>
+    /// C/C++ authors: this is <c>int64_t</c>. C# <c>long</c> is always 64-bit, but C <c>long</c> is
+    /// 32-bit on Windows (LLP64), so declaring it as <c>long</c> misaligns every field after it.
+    /// </para>
+    /// </summary>
     public long FileSizeBytes;
 
     /// <summary>
@@ -65,6 +83,8 @@ public unsafe struct IGImageInfo
     /// </summary>
     public byte* IccProfileData;
 
-    /// <summary>Size in bytes of <see cref="IccProfileData"/>. Zero means no profile.</summary>
+    /// <summary>
+    /// Size in bytes of <see cref="IccProfileData"/>. Zero means no profile.
+    /// </summary>
     public int IccProfileSize;
 }

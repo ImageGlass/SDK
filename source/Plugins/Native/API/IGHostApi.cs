@@ -14,12 +14,18 @@ namespace ImageGlass.SDK.Plugins;
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct IGHostApi
 {
-    /// <summary>Size of this struct in bytes; set by the host.</summary>
+    /// <summary>
+    /// Size of this struct in bytes; set by the host.
+    /// </summary>
     public int StructSize;
 
-    /// <summary>Host ABI version. Must match what the plugin was built against (major).</summary>
+    /// <summary>
+    /// Host ABI version. Must match what the plugin was built against (major).
+    /// </summary>
     public int AbiVersion;
 
-    /// <summary>Pointer to the core API table. Never null.</summary>
+    /// <summary>
+    /// Pointer to the core API table. Never null.
+    /// </summary>
     public IGHostCoreApi* Core;
 }
