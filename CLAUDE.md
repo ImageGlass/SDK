@@ -31,16 +31,20 @@ Native codec plugins talk to the host through versioned, `[StructLayout(LayoutKi
 
 1. Host calls the plugin's single C export `ig_plugin_get_api` (`IGNativeAbi.ENTRY_POINT_NAME`), passing the host ABI version and an `IGHostApi*`.
 2. Plugin returns an `IGPluginApi*` (identity + `GetCodec`/`Initialize`/`Shutdown`/`SelfTest`).
-3. Per codec, `IGCodecApi` exposes `GetCapability`, extension/signature matching, `LoadMetadata`, `DecodeStaticRaster`, animation entry points, and the buffer-freeing callbacks.
+3. Per codec, `IGCodecApi` exposes `GetCapability` (plugin-allocated, returned by pointer), extension/signature matching, `LoadMetadata`, `DecodeStaticRaster`, the animation-decode entry points, `EncodeStaticRaster`, the multi-frame encode session, and the buffer-freeing callbacks.
 
 Rules baked into the contract – preserve them when editing:
 
-- **ABI versioning:** `IG_PLUGIN_ABI_VERSION` is `MAJOR*1_000_000 + MINOR*1_000 + PATCH`. A **major** bump is a breaking change and the host rejects mismatched plugins. Adding fields to the end of an existing struct is a minor change; reordering/inserting/removing fields is breaking. `StructSize` fields exist so the host can validate layout – keep them.
-- **Memory ownership:** whoever allocates frees. The plugin allocates pixel/animation buffers and the host calls back into the plugin's `FreePixelBuffer`/`FreeAnimationInfo`. `FreePixelBuffer` **must be thread-safe** – SkiaSharp may invoke the release delegate from any thread when an `SKImage` is disposed.
+- **ABI versioning:** `IG_PLUGIN_ABI_VERSION` is `MAJOR*1_000_000 + MINOR*1_000 + PATCH`. A **major** bump is a breaking change and the host rejects mismatched plugins. Reordering/inserting/removing fields is breaking. Appending to the end of a struct is only compatible where that struct has a `StructSize` **and the allocating side sets it** – that is what bounds the reader; where the allocating side has none (`IGAnimationFrameInfo`, whose array the plugin allocates and the host strides), appending is breaking too. Keep and set every `StructSize`.
+- **The v1 contract was revised in place for encoding** (new `StructSize` on `IGCodecApi`/`IGCodecCapability`, pointer-returning `GetCapability`, renamed capability flags) with **no version bump**, so every plugin must be rebuilt. Stale libraries are refused per codec by the `IGCodecApi.StructSize` check.
+- **Memory ownership:** whoever allocates frees. The plugin allocates decode pixel/animation buffers and the host calls back into the plugin's `FreePixelBuffer`/`FreeAnimationInfo`. `FreePixelBuffer` **must be thread-safe** – SkiaSharp may invoke the release delegate from any thread when an `SKImage` is disposed. **Encode input buffers are host-owned**, call-scoped, and must never reach `FreePixelBuffer`.
 - **Animation:** decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not do sub-rect composition or disposal/blend replay – GIF/APNG plugins composite internally.
+- **Encoding:** capabilities are a 2x2 over {static raster, multi-frame} x {decode, encode}, each quadrant independently optional. One multi-frame session covers animated formats and page containers alike, split by `IGMultiFrameEncodeInfo.IsAnimated`. The host passes a temp destination path it owns and moves the result into place; the plugin must write that path completely and close its handle on every return path.
 - **Cancellation:** is an opaque `void*` token; plugins poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled`.
 
-A native plugin ships as a folder with `igplugin.json` (`PluginManifest.FILE_NAME`) describing id/name/`Executable` (the shared lib) and an optional `SupportedExtensions` override.
+A native plugin ships as a folder with `igplugin.json` (`PluginManifest.FILE_NAME`) describing id/name/`Executable` (the shared lib). The manifest carries **no** extension list and the host never writes it: readable and writable formats are declared in `IGCodecCapability` (`DecodeExtensions`/`EncodeExtensions`) and narrowed per user in the host's config.
+
+`docs/ig_plugin_abi.h` is the canonical C declaration for non-C# plugin authors. It is documentation only (nothing compiles it), so review it against `source/Plugins/Native/` on every ABI change. Two traps it fixes: `IGStringRef.Data` is `char16_t*` not `char*`, and `IGImageInfo.FileSizeBytes` is `int64_t` not `long`.
 
 ## Tool IPC architecture
 

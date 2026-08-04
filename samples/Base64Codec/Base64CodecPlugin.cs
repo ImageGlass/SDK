@@ -3,18 +3,28 @@ ImageGlass Base64 Sample Codec Plugin
 Copyright (C) 2026 DUONG DIEU PHAP
 MIT License
 
-Demonstrates the IGNativeAbi with a minimal, cross-platform codec that reads a
-".b64" text file, base64-decodes its contents back into the original image bytes
-(PNG / JPEG / WebP / ... – whatever was encoded), and decodes those bytes to
-32bpp premultiplied BGRA via SkiaSharp.
+Demonstrates the IGNativeAbi with a minimal, cross-platform codec that both READS
+and WRITES a ".b64" text file.
 
-A ".b64" file is just a text file holding a base64 string. Two shapes are
-accepted:
+Decoding: base64-decodes the file contents back into the original image bytes
+(PNG / JPEG / WebP / ... - whatever was encoded) and decodes those bytes to 32bpp
+BGRA via SkiaSharp.
+
+Encoding: takes the pixels the host hands over, PNG-encodes them with SkiaSharp,
+then writes the base64 of that PNG as text. So a decode/encode round trip through
+ImageGlass is lossless.
+
+A ".b64" file is just a text file holding a base64 string. Two shapes are accepted
+on read; encoding always emits shape 1:
 
     1. A raw base64 payload:           iVBORw0KGgoAAAANSUhEUgAA...
     2. A data URI:                     data:image/png;base64,iVBORw0KGgo...
 
 Whitespace/newlines anywhere in the payload are ignored.
+
+This codec deliberately implements only 3 of the 4 capability quadrants: static
+raster decode, static raster encode, and metadata. It leaves animation decode and
+multi-frame encode null to show that each is independently optional.
 */
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -27,8 +37,8 @@ internal static unsafe class Base64CodecPlugin
 {
     // ------------------------------ Static buffers ------------------------------
     // Everything the host receives must outlive the call. We pre-allocate
-    // process-lifetime native blocks for the API tables, id strings, and the
-    // extension table. They are intentionally never freed.
+    // process-lifetime native blocks for the API tables, the capability struct, id
+    // strings, and the extension tables. They are intentionally never freed.
 
     private const string PluginIdString = "Plugin_SampleBase64Codec";
     private const string PluginNameString = "Base64 Codec (sample)";
@@ -36,10 +46,15 @@ internal static unsafe class Base64CodecPlugin
     private const string CodecIdString = "plugin.base64.codec";
     private const string CodecNameString = "Base64 Codec";
 
-    private static readonly string[] SupportedExtensions = [".b64"];
+    // Formats this codec can read, and the (here identical) set it can write.
+    // These arrays are the ONLY declaration of the codec's formats: the manifest
+    // carries no extension list, and the user narrows the sets in ImageGlass.
+    private static readonly string[] DecodeExtensions = [".b64"];
+    private static readonly string[] EncodeExtensions = [".b64"];
 
     private static IGPluginApi* _pluginApi;
     private static IGCodecApi* _codecApi;
+    private static IGCodecCapability* _capability;
     private static IGHostApi* _hostApi;
 
     // UTF-16 string buffers (process-lifetime).
@@ -48,8 +63,8 @@ internal static unsafe class Base64CodecPlugin
     private static char* _bufVersion;
     private static char* _bufCodecId;
     private static char* _bufCodecName;
-    private static char** _bufExtensions; // one char* per entry in SupportedExtensions
-    private static IGStringRef* _extArray;
+    private static IGStringRef* _decExtArray;
+    private static IGStringRef* _encExtArray;
 
     // Per-decode bookkeeping so FreePixelBuffer can find the malloc to free.
     // Keyed by the pixel pointer.
@@ -70,6 +85,7 @@ internal static unsafe class Base64CodecPlugin
         _hostApi = hostApi;
 
         InitStrings();
+        InitCapability();
         InitCodecApi();
         InitPluginApi();
         return _pluginApi;
@@ -97,10 +113,13 @@ internal static unsafe class Base64CodecPlugin
     // ------------------------------ Codec API callbacks ------------------------------
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static IGStatus CodecGetCapability(IGCodecCapability* outCap)
+    private static IGStatus CodecGetCapability(IGCodecCapability** outCap)
     {
         if (outCap == null) return IGStatus.InvalidArg;
-        *outCap = BuildCapability();
+
+        // Hand back the plugin-owned struct built once in InitCapability. Never fill
+        // a host buffer: the host cannot tell us how large its allocation is.
+        *outCap = _capability;
         return IGStatus.OK;
     }
 
@@ -109,7 +128,7 @@ internal static unsafe class Base64CodecPlugin
     {
         if (ext.Data == null || ext.Length <= 0) return 0;
         var s = new ReadOnlySpan<char>(ext.Data, ext.Length);
-        foreach (var supported in SupportedExtensions)
+        foreach (var supported in DecodeExtensions)
         {
             if (s.Equals(supported, StringComparison.OrdinalIgnoreCase)) return 1;
         }
@@ -140,15 +159,107 @@ internal static unsafe class Base64CodecPlugin
     private static void CodecFreePixelBuffer(IGPixelBuffer* buf)
     {
         if (buf == null || buf->Data == null) return;
+
         nint key = (nint)buf->Data;
         nint pixels;
         lock (_bufLock)
         {
+            // Not one of ours: either already freed, or this is an ENCODE input
+            // buffer the host owns. Never free memory we did not allocate.
             if (!_liveBuffers.Remove(key, out pixels)) return;
         }
         NativeMemory.Free((void*)pixels);
         buf->Data = null;
         buf->ReleaseContext = null;
+    }
+
+
+    // ------------------------------ Encode ------------------------------
+    //
+    // destFilePath is a host-owned temp file carrying the real target extension;
+    // the host moves it into place on success. So: write it completely, and close
+    // the handle before returning on every path (File.WriteAllText does both).
+    // The source buffer belongs to the HOST and dies when this call returns.
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus CodecEncodeStaticRaster(IGStringRef destFilePath, IGPixelBuffer* source,
+        IGEncodeOptions* options, void* cancellation)
+    {
+        if (destFilePath.Data == null || destFilePath.Length <= 0) return IGStatus.InvalidArg;
+        if (source == null || source->Data == null) return IGStatus.InvalidArg;
+        if (source->Width <= 0 || source->Height <= 0) return IGStatus.InvalidArg;
+
+        // The host normalizes to BGRA8 unpremultiplied, but check rather than assume:
+        // a future host may hand over a wider format.
+        if (source->PixelFormat != (int)IGPixelFormat.Bgra8Unorm) return IGStatus.Unsupported;
+
+        var destPath = new string(destFilePath.Data, 0, destFilePath.Length);
+        var quality = ReadQuality(options);
+
+        if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
+        try
+        {
+            // 1) Wrap the host pixels and PNG-encode them. FromPixelCopy copies, so
+            //    nothing outlives the call. (PNG ignores quality; it is passed for
+            //    illustration of how options reach the encoder.)
+            var info = new SKImageInfo(source->Width, source->Height,
+                SKColorType.Bgra8888, SKAlphaType.Unpremul);
+
+            using var image = SKImage.FromPixelCopy(info, (nint)source->Data, source->Stride);
+            if (image is null)
+            {
+                Log(4, "Base64Codec: could not wrap the source pixels.");
+                return IGStatus.EncodeFailed;
+            }
+
+            if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
+            using var png = image.Encode(SKEncodedImageFormat.Png, quality);
+            if (png is null || png.Size == 0)
+            {
+                Log(4, "Base64Codec: PNG encoding produced no data.");
+                return IGStatus.EncodeFailed;
+            }
+
+            if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
+            // 2) Base64 the PNG bytes and write the text file.
+            var base64 = Convert.ToBase64String(png.AsSpan());
+            File.WriteAllText(destPath, base64);
+
+            return IGStatus.OK;
+        }
+        catch (IOException ex)
+        {
+            Log(4, $"Base64Codec: failed to write '{destPath}' ({ex.Message}).");
+            return IGStatus.IoError;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Log(4, $"Base64Codec: access denied writing '{destPath}' ({ex.Message}).");
+            return IGStatus.IoError;
+        }
+        catch (Exception ex)
+        {
+            Log(4, $"Base64Codec: unexpected encode failure ({ex.Message}).");
+            return IGStatus.Internal;
+        }
+    }
+
+
+    /// <summary>
+    /// Reads <c>Quality</c> from the host's options, honoring <c>StructSize</c>: a host
+    /// built against a smaller struct may not carry the field at all, so never read
+    /// past what it reports.
+    /// </summary>
+    private static int ReadQuality(IGEncodeOptions* options)
+    {
+        // offsetof(Quality) + sizeof(int): the smallest StructSize that includes Quality.
+        const int QUALITY_END = sizeof(int) * 2;
+
+        if (options == null || options->StructSize < QUALITY_END) return 100;
+        return Math.Clamp(options->Quality, 1, 100);
     }
 
 
@@ -220,7 +331,7 @@ internal static unsafe class Base64CodecPlugin
 
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
-        // 3) Decode straight into a native, host-owned BGRA8 (premultiplied) buffer.
+        // 3) Decode straight into a native, plugin-owned BGRA8 buffer.
         ulong stride = (ulong)w * 4UL;
         ulong size = stride * (ulong)h;
         if (size > int.MaxValue) return IGStatus.OutOfMemory;
@@ -230,7 +341,8 @@ internal static unsafe class Base64CodecPlugin
 
         try
         {
-            var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
+            // Unpremul, matching what IGPixelFormat.Bgra8Unorm means to the host.
+            var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Unpremul);
             var result = codec.GetPixels(dstInfo, (nint)pixels);
 
             // IncompleteInput still yields a usable (partially-decoded) image.
@@ -311,25 +423,6 @@ internal static unsafe class Base64CodecPlugin
     }
 
 
-    private static IGCodecCapability BuildCapability()
-    {
-        return new IGCodecCapability
-        {
-            CodecId = MakeStringRef(_bufCodecId, CodecIdString.Length),
-            CodecName = MakeStringRef(_bufCodecName, CodecNameString.Length),
-            // No built-in codec claims ".b64", but advertise a high priority so this
-            // plugin reliably wins selection for the extension it owns.
-            MetadataPriority = 200,
-            DecodePriority = 200,
-            SupportsMetadata = 1,
-            SupportsStaticRaster = 1,
-            SupportsColorProfiles = 0,
-            SupportsAnimation = 0,
-            ExtensionCount = SupportedExtensions.Length,
-            Extensions = _extArray,
-        };
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static IGStringRef MakeStringRef(char* data, int len) => new() { Data = data, Length = len };
 
@@ -341,20 +434,54 @@ internal static unsafe class Base64CodecPlugin
         _bufCodecId = AllocUtf16(CodecIdString);
         _bufCodecName = AllocUtf16(CodecNameString);
 
-        var count = SupportedExtensions.Length;
-        _bufExtensions = (char**)NativeMemory.AllocZeroed((nuint)(sizeof(nint) * count));
-        _extArray = (IGStringRef*)NativeMemory.AllocZeroed((nuint)(sizeof(IGStringRef) * count));
-        for (var i = 0; i < count; i++)
+        _decExtArray = AllocExtensionArray(DecodeExtensions);
+        _encExtArray = AllocExtensionArray(EncodeExtensions);
+    }
+
+    /// <summary>
+    /// Allocates a process-lifetime <see cref="IGStringRef"/> array for the given extensions.
+    /// The host keeps reading this array for as long as the plugin is loaded.
+    /// </summary>
+    private static IGStringRef* AllocExtensionArray(string[] extensions)
+    {
+        var array = (IGStringRef*)NativeMemory.AllocZeroed((nuint)(sizeof(IGStringRef) * extensions.Length));
+        for (var i = 0; i < extensions.Length; i++)
         {
-            var ext = SupportedExtensions[i];
-            _bufExtensions[i] = AllocUtf16(ext);
-            _extArray[i] = MakeStringRef(_bufExtensions[i], ext.Length);
+            array[i] = MakeStringRef(AllocUtf16(extensions[i]), extensions[i].Length);
         }
+        return array;
+    }
+
+    private static void InitCapability()
+    {
+        _capability = (IGCodecCapability*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecCapability));
+        _capability->StructSize = sizeof(IGCodecCapability);
+        _capability->CodecId = MakeStringRef(_bufCodecId, CodecIdString.Length);
+        _capability->CodecName = MakeStringRef(_bufCodecName, CodecNameString.Length);
+
+        // No built-in codec claims ".b64", but advertise a high priority so this
+        // plugin reliably wins selection for the extension it owns.
+        _capability->MetadataPriority = 200;
+        _capability->DecodePriority = 200;
+        _capability->EncodePriority = 200;
+
+        _capability->SupportsMetadata = 1;
+        _capability->SupportsColorProfiles = 0;
+        _capability->SupportsStaticRasterDecoding = 1;
+        _capability->SupportsAnimationDecoding = 0;
+        _capability->SupportsStaticRasterEncoding = 1;
+        _capability->SupportsMultiFrameEncoding = 0;
+
+        _capability->DecodeExtensionCount = DecodeExtensions.Length;
+        _capability->DecodeExtensions = _decExtArray;
+        _capability->EncodeExtensionCount = EncodeExtensions.Length;
+        _capability->EncodeExtensions = _encExtArray;
     }
 
     private static void InitCodecApi()
     {
         _codecApi = (IGCodecApi*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecApi));
+        _codecApi->StructSize = sizeof(IGCodecApi);
         _codecApi->GetCapability = &CodecGetCapability;
         _codecApi->CanHandleExtension = &CodecCanHandleExtension;
         _codecApi->CanHandleSignature = null; // base64 text has no reliable magic; match by extension only.
@@ -362,10 +489,16 @@ internal static unsafe class Base64CodecPlugin
         _codecApi->DecodeStaticRaster = &CodecDecodeStaticRaster;
         _codecApi->FreePixelBuffer = &CodecFreePixelBuffer;
 
-        // Static-image-only codec: leave the animation entry points null.
+        // Static-image-only codec: leave the animation decode entry points null.
         _codecApi->GetAnimationInfo = null;
         _codecApi->FreeAnimationInfo = null;
         _codecApi->DecodeAnimationFrame = null;
+
+        // Single-frame encoding only; no multi-frame session.
+        _codecApi->EncodeStaticRaster = &CodecEncodeStaticRaster;
+        _codecApi->BeginEncodeMultiFrame = null;
+        _codecApi->EncodeFrame = null;
+        _codecApi->EndEncodeMultiFrame = null;
     }
 
     private static void InitPluginApi()

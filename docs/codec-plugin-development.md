@@ -30,6 +30,7 @@ publish and install a plugin.
   - [Step 10 – Publish as a Native AOT shared library](#step-10--publish-as-a-native-aot-shared-library)
   - [Step 11 – Install and test](#step-11--install-and-test)
   - [Animated formats](#animated-formats)
+  - [Encoding](#encoding)
   - [Rules you must not break](#rules-you-must-not-break)
   - [Troubleshooting](#troubleshooting)
   - [API reference](#api-reference)
@@ -53,7 +54,8 @@ The handshake is three layers deep:
 
 3. For each codec, GetCodec hands back an IGCodecApi table:
    GetCapability, CanHandleExtension, CanHandleSignature,
-   LoadMetadata, DecodeStaticRaster, FreePixelBuffer (+ animation entry points)
+   LoadMetadata, DecodeStaticRaster, FreePixelBuffer
+   (+ animation decode entry points, + encode entry points)
 ```
 
 ```
@@ -69,10 +71,17 @@ The handshake is three layers deep:
    codec->FreePixelBuffer(buf) ──────────▶ frees the allocation
 ```
 
+Saving reverses the flow: the host resolves an encoder the same priority-based way, hands it
+pixels plus a destination path, and moves the result into place. See [Encoding](#encoding).
+
 Because the surface is just C function pointers, a plugin can be written in **any language
 that can export a C entry point and produce a native shared library**. This guide uses C#
 with Native AOT because the SDK ships the struct definitions for you, but the contract is
-language-neutral.
+language-neutral: [`ig_plugin_abi.h`](ig_plugin_abi.h) is the canonical C declaration of every
+struct and table, with fixed-width types throughout, and is `bindgen`-friendly for Rust. Note
+two traps it spells out that the C# definitions hide: `IGStringRef.Data` is `char16_t*`
+(**not** `char*`, since C# `char` is a 16-bit UTF-16 code unit) and `IGImageInfo.FileSizeBytes`
+is `int64_t` (**not** `long`, which is 32-bit on Windows LLP64).
 
 
 ## Prerequisites
@@ -238,46 +247,97 @@ private static IGStatus OnGetCodec(int index, IGCodecApi** outCodecApi)
 ## Step 3 – Advertise the codec's capabilities
 
 `GetCapability` tells the host what this codec can do and which extensions it owns. The
-host uses it both when probing a file and when choosing between competing codecs:
+host uses it both when probing a file and when choosing between competing codecs.
+
+**You allocate the capability struct and return a pointer to it.** Allocate it once, for the
+lifetime of the plugin, rather than per call. Do not fill a host-supplied buffer: the host
+cannot tell you how large its allocation is beforehand, so a plugin built against a larger
+struct would write past it.
 
 ```csharp
+// Allocated once at startup and never freed (see InitCapability in the sample).
+private static IGCodecCapability* _capability;
+
 [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-private static IGStatus CodecGetCapability(IGCodecCapability* outCap)
+private static IGStatus CodecGetCapability(IGCodecCapability** outCap)
 {
     if (outCap == null) return IGStatus.InvalidArg;
-    *outCap = new IGCodecCapability
-    {
-        CodecId   = MakeStringRef(_bufCodecId, CodecIdString.Length),   // "plugin.base64.codec"
-        CodecName = MakeStringRef(_bufCodecName, CodecNameString.Length),
-
-        // Higher number wins. No built-in decodes ".b64", so this wins regardless.
-        // (Priority > 100 is clamped for built-in-listed extensions; see below.)
-        MetadataPriority = 200,
-        DecodePriority   = 200,
-
-        SupportsMetadata      = 1,   // we implement LoadMetadata
-        SupportsStaticRaster  = 1,   // we implement DecodeStaticRaster
-        SupportsColorProfiles = 0,   // we don't extract ICC profiles
-        SupportsAnimation     = 0,   // static images only
-
-        ExtensionCount = SupportedExtensions.Length,
-        Extensions     = _extArray,  // IGStringRef[] pre-allocated in InitStrings()
-    };
+    *outCap = _capability;
     return IGStatus.OK;
+}
+
+private static void InitCapability()
+{
+    _capability = (IGCodecCapability*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecCapability));
+    _capability->StructSize = sizeof(IGCodecCapability);   // REQUIRED, see below
+    _capability->CodecId    = MakeStringRef(_bufCodecId, CodecIdString.Length);
+    _capability->CodecName  = MakeStringRef(_bufCodecName, CodecNameString.Length);
+
+    // Higher number wins. No built-in handles ".b64", so this wins regardless.
+    _capability->MetadataPriority = 200;
+    _capability->DecodePriority   = 200;
+    _capability->EncodePriority   = 200;
+
+    _capability->SupportsMetadata             = 1;   // we implement LoadMetadata
+    _capability->SupportsColorProfiles        = 0;   // we don't extract ICC profiles
+    _capability->SupportsStaticRasterDecoding = 1;   // we implement DecodeStaticRaster
+    _capability->SupportsAnimationDecoding    = 0;   // not a timeline format
+    _capability->SupportsStaticRasterEncoding = 1;   // we implement EncodeStaticRaster
+    _capability->SupportsMultiFrameEncoding   = 0;   // no multi-frame session
+
+    _capability->DecodeExtensionCount = DecodeExtensions.Length;
+    _capability->DecodeExtensions     = _decExtArray;   // IGStringRef[], plugin lifetime
+    _capability->EncodeExtensionCount = EncodeExtensions.Length;
+    _capability->EncodeExtensions     = _encExtArray;
 }
 ```
 
-**Codec selection is priority-based, with a guard for built-in formats.** When several
-codecs (yours, plus built-ins) report they can handle a file, the host picks the highest
-`DecodePriority` (or `MetadataPriority` for metadata loads). For a **brand-new extension**
-nobody else handles, any positive priority wins. But if you claim an extension already in the
-host's built-in format list, the host **clamps your priority below the built-in ceiling (100)**
-so a built-in decoder always wins it, however high you report. Overriding a built-in decoder
-is not automatic: the user (or an admin config) must grant that plugin the override-built-ins
-trust flag. Aim plugins at formats the built-ins do not already decode.
+**Always set `StructSize`.** It must equal `sizeof(IGCodecCapability)` as your build sees it.
+The host reads no field beyond it and rejects the codec outright if the value is outside the
+range it understands. Allocating with a zero-filling allocator (`NativeMemory.AllocZeroed`,
+`calloc`) means a forgotten `StructSize` reads as 0 and is refused cleanly instead of being
+undefined behavior. The same rule applies to `IGCodecApi.StructSize` and
+`IGPluginApi.StructSize`.
 
-The capability flags must match reality: if you set `SupportsAnimation = 1` you **must**
-provide all three animation function pointers, or the host downgrades the flag to 0.
+**Capabilities are a 2x2, and each quadrant is independent:**
+
+|                   | Decode                        | Encode                         |
+|-------------------|-------------------------------|--------------------------------|
+| **Static raster** | `SupportsStaticRasterDecoding`| `SupportsStaticRasterEncoding` |
+| **Multi-frame**   | `SupportsAnimationDecoding`   | `SupportsMultiFrameEncoding`   |
+
+Implement any subset. Read-only, write-only, and read/write codecs are all valid; a codec
+that implements no quadrant is not registered at all. `SupportsMetadata` and
+`SupportsColorProfiles` are decode-side only.
+
+**Flags must match reality, and the host verifies:**
+
+- `SupportsAnimationDecoding = 1` requires all three of `GetAnimationInfo`,
+  `FreeAnimationInfo`, `DecodeAnimationFrame`.
+- `SupportsStaticRasterEncoding = 1` requires `EncodeStaticRaster` **and a non-empty
+  `EncodeExtensions` list**. An empty encode list never means "encodes everything".
+- `SupportsMultiFrameEncoding = 1` requires all three of `BeginEncodeMultiFrame`,
+  `EncodeFrame`, `EndEncodeMultiFrame`.
+
+Any of these unmet and the host silently downgrades the flag to 0, so a partly wired codec
+degrades instead of crashing.
+
+**Two extension lists, and they are the only declaration of your formats.** `igplugin.json`
+carries no extension list at all: what a codec can read and write is declared here, in code.
+The user can narrow either set per plugin in ImageGlass's plugin settings, so ship the full
+set you actually support and let them switch off what they do not want.
+
+**Codec selection is priority-based, and trust is the only gate.** When several codecs (yours,
+plus built-ins) can handle a file, the host picks the highest `DecodePriority`, or
+`MetadataPriority` for metadata loads, or `EncodePriority` when saving. Enabling a plugin is
+an explicit act of trust, so an enabled plugin's priority is honored as reported, even for a
+format the host has a built-in codec for. Ties go to the codec registered first, and built-ins
+register first, so report a strictly higher number to take a format over.
+
+That makes claiming a common extension a real responsibility: at `DecodePriority` 200 you
+become the decoder for every such file the user opens. Prefer formats the built-ins do not
+handle, and where you do overlap, expect users to untick the extensions they would rather
+leave to the built-in codec.
 
 
 ## Step 4 – Match files by extension
@@ -296,7 +356,7 @@ private static int CodecCanHandleExtension(IGStringRef ext)
 {
     if (ext.Data == null || ext.Length <= 0) return 0;
     var s = new ReadOnlySpan<char>(ext.Data, ext.Length);
-    foreach (var supported in SupportedExtensions)   // [".b64"]
+    foreach (var supported in DecodeExtensions)   // [".b64"]
     {
         if (s.Equals(supported, StringComparison.OrdinalIgnoreCase)) return 1;
     }
@@ -313,6 +373,7 @@ to extension matching:
 private static void InitCodecApi()
 {
     _codecApi = (IGCodecApi*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecApi));
+    _codecApi->StructSize          = sizeof(IGCodecApi);   // REQUIRED
     _codecApi->GetCapability       = &CodecGetCapability;
     _codecApi->CanHandleExtension  = &CodecCanHandleExtension;
     _codecApi->CanHandleSignature  = null;   // no reliable magic for base64 text
@@ -320,10 +381,16 @@ private static void InitCodecApi()
     _codecApi->DecodeStaticRaster  = &CodecDecodeStaticRaster;
     _codecApi->FreePixelBuffer     = &CodecFreePixelBuffer;
 
-    // Static-image-only codec: leave the animation entry points null.
+    // Static-image-only codec: leave the animation decode entry points null.
     _codecApi->GetAnimationInfo    = null;
     _codecApi->FreeAnimationInfo   = null;
     _codecApi->DecodeAnimationFrame = null;
+
+    // Single-frame encoding only; no multi-frame session (see "Encoding").
+    _codecApi->EncodeStaticRaster     = &CodecEncodeStaticRaster;
+    _codecApi->BeginEncodeMultiFrame  = null;
+    _codecApi->EncodeFrame            = null;
+    _codecApi->EndEncodeMultiFrame    = null;
 }
 ```
 
@@ -559,9 +626,12 @@ Required fields are `id`, `name`, and `executable`. A few rules:
   plugin folder (`MyCodec.dll` / `libMyCodec.so` / `MyCodec.dylib`). The host rejects an
   absolute/rooted path, any `..`, or a subfolder, and requires the platform native-lib
   extension: keep the library directly in the plugin folder.
-- **Optional `supportedExtensions`** (semicolon-separated, e.g. `".foo;.bar"`) *overrides*
-  the extensions your codec reports through `IGCodecCapability`. Omit it to use the
-  plugin-reported list. This lets a user widen or restrict a codec's scope without a rebuild.
+- **There is no extension list in the manifest.** The formats a codec reads and writes are
+  declared in code, through `IGCodecCapability.DecodeExtensions` / `EncodeExtensions`
+  (see [Step 3](#step-3--advertise-the-codecs-capabilities)). Users narrow those sets in
+  ImageGlass's plugin settings, which is stored in the app's own config.
+- **The manifest is yours, and the host never writes it.** Treat it as immutable identity
+  metadata: nothing in ImageGlass edits `igplugin.json`, and users are not expected to.
 
 
 ## Step 10 – Publish as a Native AOT shared library
@@ -635,7 +705,7 @@ Open `test.b64` in ImageGlass – it renders as the original image. If it doesn'
 
 The sample is static-only, but the ABI fully supports animation. To add it:
 
-1. Set `SupportsAnimation = 1` in `GetCapability`.
+1. Set `SupportsAnimationDecoding = 1` in `GetCapability`.
 2. Provide **all three** animation function pointers in `InitCodecApi` (the host downgrades
    the flag to 0 if any is null):
    - `GetAnimationInfo(path, IGAnimationInfo* out, cancellation)` – fill `FrameCount`,
@@ -672,11 +742,175 @@ arrives; reporting frame 0's size there avoids a visible correction on the first
 Pick the path by how the frames are meant to be consumed:
 
 - **Timeline** (per-frame delays, auto-advance): the animation path above –
-  `SupportsAnimation = 1` plus the three animation entry points.
+  `SupportsAnimationDecoding = 1` plus the three animation entry points.
 - **User-stepped container** (pages, unrelated images, no timing): report `FrameCount > 1`
-  from `LoadMetadata` and leave `SupportsAnimation = 0`. The host treats it as a multi-page
-  document, steps frames on user command, and decodes each through `DecodeStaticRaster`,
-  so per-frame sizing already works there.
+  from `LoadMetadata` and leave `SupportsAnimationDecoding = 0`. The host treats it as a
+  multi-page document, steps frames on user command, and decodes each through
+  `DecodeStaticRaster`, so per-frame sizing already works there.
+
+Note the asymmetry with encoding: the *decode* side splits these two cases, because a page
+container can be stepped through the stateless `DecodeStaticRaster`. The *encode* side does
+not, because both cases need you to hold state across frames, so both use the one multi-frame
+session and differ only by the `IsAnimated` flag.
+
+
+## Encoding
+
+A codec can also **write** files. Once you advertise
+`SupportsStaticRasterEncoding = 1` plus a non-empty `EncodeExtensions` list, your formats
+appear in ImageGlass's Save As dialog and your encoder receives the pixels.
+
+Encoding is fully independent of decoding: a write-only codec is valid (leave every decode
+flag at 0), and so is a codec that reads one set of extensions and writes another.
+
+### The destination path is a host temp file
+
+The host does **not** hand you the filename the user picked. It gives you a temp path in the
+destination folder, carrying the real target extension last:
+
+```
+C:\Users\me\Pictures\.ig-save-7f3c1d9a48b04e1e9c2f5b6a1d0e8c72.b64
+```
+
+On success the host moves that file onto the user's chosen name. That is deliberate: `Save`
+overwrites the file currently open in the viewer, so if you could truncate the real
+destination and then fail, the user's original would be gone. Consequences for you:
+
+- **Create and overwrite exactly the path you are given**, and write it completely.
+- **Close your handle before returning, on every path including failure.** The host moves or
+  deletes that file immediately afterwards, and on Windows an open handle makes that fail with
+  a sharing violation, which turns your error into a confusing one.
+- **Do not derive anything from the filename.** The base name is a GUID. Read the extension if
+  you write several formats; for the user-visible name and the original's metadata, use
+  `IGEncodeOptions.SourceFilePath`.
+- Do not delete the temp file on failure. The host owns it and cleans it up.
+
+### The source buffer belongs to the host
+
+`IGPixelBuffer` is used in both directions, with **opposite ownership**. On decode you
+allocate it and the host releases it through your `FreePixelBuffer`. On encode the host
+allocates it and it dies when your call returns:
+
+- **Never retain it** past the call.
+- **Never pass it to `FreePixelBuffer`.** That frees host memory, and it is the single most
+  likely bug in an encoder. The host sets `ReleaseContext` to a non-null sentinel it does not
+  interpret, so a shared free routine can detect and refuse this case. The sample's
+  `FreePixelBuffer` is naturally safe because it only frees pointers it recorded itself.
+
+The host normalizes pixels to `IGPixelFormat.Bgra8Unorm` (BGRA8, **unpremultiplied**) with a
+tight `Width * 4` stride. Read `PixelFormat` and return `IGStatus.Unsupported` for anything
+you do not handle rather than assuming, so a future host that passes wider formats degrades
+instead of writing garbage.
+
+### Static raster encode
+
+```csharp
+[UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+private static IGStatus CodecEncodeStaticRaster(IGStringRef destFilePath, IGPixelBuffer* source,
+    IGEncodeOptions* options, void* cancellation)
+{
+    if (destFilePath.Data == null || destFilePath.Length <= 0) return IGStatus.InvalidArg;
+    if (source == null || source->Data == null) return IGStatus.InvalidArg;
+    if (source->PixelFormat != (int)IGPixelFormat.Bgra8Unorm) return IGStatus.Unsupported;
+
+    var destPath = new string(destFilePath.Data, 0, destFilePath.Length);
+    var quality  = ReadQuality(options);
+
+    if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
+    try
+    {
+        var info = new SKImageInfo(source->Width, source->Height,
+            SKColorType.Bgra8888, SKAlphaType.Unpremul);
+
+        // FromPixelCopy copies, so nothing outlives the call.
+        using var image = SKImage.FromPixelCopy(info, (nint)source->Data, source->Stride);
+        if (image is null) return IGStatus.EncodeFailed;
+
+        using var png = image.Encode(SKEncodedImageFormat.Png, quality);
+        if (png is null || png.Size == 0) return IGStatus.EncodeFailed;
+
+        // File.WriteAllText writes and closes in one go.
+        File.WriteAllText(destPath, Convert.ToBase64String(png.AsSpan()));
+        return IGStatus.OK;
+    }
+    catch (IOException) { return IGStatus.IoError; }
+    catch { return IGStatus.Internal; }
+}
+```
+
+### Reading `IGEncodeOptions` safely
+
+The host allocates it and sets `StructSize`. Never read past that: a host built against a
+smaller struct does not carry the later fields at all.
+
+```csharp
+private static int ReadQuality(IGEncodeOptions* options)
+{
+    // offsetof(Quality) + sizeof(int): the smallest StructSize that includes Quality.
+    const int QUALITY_END = sizeof(int) * 2;
+
+    if (options == null || options->StructSize < QUALITY_END) return 100;
+    return Math.Clamp(options->Quality, 1, 100);
+}
+```
+
+| Field | Use |
+|---|---|
+| `Quality` | 1..100. Ignore it for formats with no quality knob. |
+| `Lossless` | Set independently of `Quality`, because "100" means near-lossless in some encoders and truly lossless in others (WEBP, JXL, AVIF). |
+| `PreserveAlpha` | 0 lets you pick an opaque palette or chroma subsampling. |
+| `SourceFilePath` | The original image, or an empty slice for clipboard/selection content. **This is how metadata survives a save:** you receive raw pixels only, so EXIF/XMP/ICC of the original are not included. Read them from here if your format carries them. |
+| `IccProfileData` / `IccProfileSize` | The profile describing the pixels you were handed; null means sRGB. Tag your output with it or colors shift. |
+
+### Multi-frame encode
+
+For formats that hold several images, implement all three session entry points and set
+`SupportsMultiFrameEncoding = 1`:
+
+```c
+IGStatus BeginEncodeMultiFrame(IGStringRef destFilePath, const IGMultiFrameEncodeInfo* info,
+                               const IGEncodeOptions* options, void** outSession, void* cancellation);
+IGStatus EncodeFrame(void* session, const IGPixelBuffer* frame,
+                     const IGEncodeFrameInfo* frameInfo, void* cancellation);
+IGStatus EndEncodeMultiFrame(void* session, int commit, void* cancellation);
+```
+
+**One session covers both animated formats and page containers**; branch on
+`IGMultiFrameEncodeInfo.IsAnimated`. With `1` the frames form a timeline, so `LoopCount` and
+each frame's `DurationMs` are meaningful (animated GIF/WEBP/APNG). With `0` they are an
+unordered container (multi-page TIFF, PDF, multi-size ICO), `LoopCount` is ignored, and every
+`DurationMs` is 0.
+
+The contract:
+
+- `Begin` returns your session pointer through `outSession`. On `IGStatus.OK` it must be
+  non-null and the host calls `End` **exactly once**. On any other status the host does **not**
+  call `End`, so release everything before returning.
+- `EncodeFrame` is called exactly `info->FrameCount` times, with `FrameIndex` strictly
+  increasing from 0 and no gaps.
+- **The host holds one frame at a time and cannot re-supply an earlier one.** Its frame cache
+  is small and evicted frames are destroyed, so there is no rewind. An encoder needing a
+  second pass must buffer internally.
+- `End` with `commit = 1` writes your trailer and flushes; with `commit = 0` the save was
+  aborted or canceled, so just stop (the host discards the temp file, so do not delete it).
+  **Either way, close the file handle and free all session state.** The session pointer is
+  dead afterwards.
+- The host opens at most one session per codec at a time and issues every call for a session
+  **from a single thread**, so session state needs no internal locking. This is the one place
+  the ABI gives you thread affinity; `FreePixelBuffer` still does not have it.
+
+### Status codes
+
+| Return | Host behavior |
+|---|---|
+| `OK` | The temp file is moved onto the user's chosen name. |
+| `Unsupported` / `NotImplemented` | Treated as declining: the host falls back to its own built-in encoder for that extension. |
+| `EncodeFailed` | The encoder ran but produced nothing valid. Surfaced to the user as a save error. |
+| `IoError` | A file-level failure (create, write, close, permissions). Also surfaced as a save error. |
+| `Canceled` | The user canceled; the host stays silent rather than showing an error. |
+
+The user's original file is never touched for any of these, so a failure is always safe.
 
 
 ## Rules you must not break
@@ -685,12 +919,24 @@ These are baked into the contract. Violating them is how a plugin "loads but cra
 host" or "works on my machine but not in production."
 
 - **ABI versioning.** `IG_PLUGIN_ABI_VERSION = MAJOR * 1_000_000 + MINOR * 1_000 + PATCH`.
-  The host **rejects** plugins whose **major** version differs. Adding fields to the *end* of
-  an existing struct is a minor (backward-compatible) change; **reordering, inserting, or
-  removing fields is breaking**. The `StructSize` fields exist so the host can validate
-  layout – always set them.
-- **Memory ownership.** Whoever allocates frees. You allocate pixel/animation buffers; the
-  host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
+  The host **rejects** plugins whose **major** version differs. **Reordering, inserting, or
+  removing fields is breaking.** Appending to the *end* of a struct is only backward-compatible
+  where that struct carries a `StructSize` **and the side that allocates it sets it** – that is
+  what bounds the reader. Where the allocating side has no `StructSize`
+  (`IGAnimationFrameInfo`, whose array you allocate and the host strides), appending is
+  breaking too. Always set every `StructSize` you own: `IGPluginApi`, `IGCodecApi`,
+  `IGCodecCapability`.
+- **The revised v1 contract requires a rebuild.** Encoding support changed `IGCodecApi` and
+  `IGCodecCapability` in place (new `StructSize` members, a pointer-returning `GetCapability`,
+  renamed capability flags) *without* a version bump. A library built against the older
+  contract is refused per codec by the `IGCodecApi.StructSize` check.
+- **Memory ownership.** Whoever allocates frees. You allocate decode pixel buffers and
+  animation info; the host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
+  **The encode input buffer is the exception: the host owns it.** Never retain it and never
+  pass it to `FreePixelBuffer`.
+- **Encoders never name their own destination.** Write exactly the temp path you are given,
+  completely, and close the handle before returning on every path. The host moves it into place;
+  it also owns cleanup, so do not delete it on failure.
 - **`FreePixelBuffer` must be thread-safe** – Skia may call it from any thread on dispose.
 - **`FreePixelBuffer` is not guaranteed to run for every buffer.** If the host unloads your
   library (shutdown/reload) while buffers are outstanding, it skips the remaining frees; the
@@ -742,9 +988,10 @@ Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
   `IsCancellationRequested`, `GetConfigDirectory`.
 - [`IGPluginApi`](../source/Plugins/Native/API/IGPluginApi.cs) – `GetCodec`, `Initialize`,
   `Shutdown`, `SelfTest`.
-- [`IGCodecApi`](../source/Plugins/Native/API/IGCodecApi.cs) – `GetCapability`,
+- [`IGCodecApi`](../source/Plugins/Native/API/IGCodecApi.cs) – `StructSize`, `GetCapability`,
   `CanHandleExtension`, `CanHandleSignature`, `LoadMetadata`, `DecodeStaticRaster`,
-  `FreePixelBuffer`, and the animation trio.
+  `FreePixelBuffer`, the animation decode trio, `EncodeStaticRaster`, and the multi-frame
+  encode session (`BeginEncodeMultiFrame`, `EncodeFrame`, `EndEncodeMultiFrame`).
 
 **Data structs & enums**
 - [`IGCodecCapability`](../source/Plugins/Native/ABI/IGCodecCapability.cs)
@@ -752,6 +999,9 @@ Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
 - [`IGPixelBuffer`](../source/Plugins/Native/ABI/IGPixelBuffer.cs)
 - [`IGAnimationInfo`](../source/Plugins/Native/ABI/IGAnimationInfo.cs) /
   [`IGAnimationFrameInfo`](../source/Plugins/Native/ABI/IGAnimationFrameInfo.cs)
+- [`IGEncodeOptions`](../source/Plugins/Native/ABI/IGEncodeOptions.cs),
+  [`IGMultiFrameEncodeInfo`](../source/Plugins/Native/ABI/IGMultiFrameEncodeInfo.cs),
+  [`IGEncodeFrameInfo`](../source/Plugins/Native/ABI/IGEncodeFrameInfo.cs)
 - [`IGStringRef`](../source/Plugins/Native/ABI/IGStringRef.cs)
 - [`IGStatus`](../source/Plugins/Native/ABI/IGStatus.cs),
   [`IGPixelFormat`](../source/Plugins/Native/ABI/IGPixelFormat.cs),
@@ -761,5 +1011,10 @@ Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
 
 **Manifest**
 - [`PluginManifest`](../source/Plugins/PluginManifest.cs) – the `igplugin.json` schema.
+
+**C declaration for non-C# plugins**
+- [`ig_plugin_abi.h`](ig_plugin_abi.h) – every struct, enum, and table in fixed-width C.
+  Documentation only: nothing in the SDK build compiles it, so it is reviewed against the C#
+  definitions whenever those change.
 
 **Full sample:** [`samples/Base64Codec`](../samples/Base64Codec/)

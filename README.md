@@ -79,10 +79,11 @@ A plugin ships as a folder containing the native library plus an `igplugin.json`
   "version": "1.0.0",
   "author": "You",
   "kind": "Codec",
-  "executable": "MyCodec.dll",        // MyCodec.so / MyCodec.dylib on other platforms
-  "supportedExtensions": ".foo;.bar"   // optional; overrides the plugin-reported list
+  "executable": "MyCodec.dll"          // MyCodec.so / MyCodec.dylib on other platforms
 }
 ```
+
+The manifest is identity metadata only, and the host never writes it. Which formats a codec reads and writes is declared in code, through `IGCodecCapability`; users narrow those sets in ImageGlass's plugin settings.
 
 The host loads the library and calls the single required export:
 
@@ -90,12 +91,15 @@ The host loads the library and calls the single required export:
 const IGPluginApi* ig_plugin_get_api(int hostAbiVersion, const IGHostApi* hostApi);
 ```
 
-It returns an `IGPluginApi` table (plugin identity + `GetCodec`/`Initialize`/`Shutdown`/`SelfTest`). Each codec then exposes an `IGCodecApi` table: capability reporting, extension/signature matching, `LoadMetadata`, `DecodeStaticRaster`, and optional animation entry points.
+It returns an `IGPluginApi` table (plugin identity + `GetCodec`/`Initialize`/`Shutdown`/`SelfTest`). Each codec then exposes an `IGCodecApi` table: capability reporting, extension/signature matching, `LoadMetadata`, `DecodeStaticRaster`, and optional animation-decode and encode entry points. Capabilities are a 2x2 over {static raster, multi-frame} x {decode, encode}, so read-only, write-only, and read/write codecs are all valid.
+
+Writing a plugin in C, C++, Rust, or Zig? Start from [`docs/ig_plugin_abi.h`](docs/ig_plugin_abi.h), the canonical C declaration of the whole ABI.
 
 Key contracts to honor:
 
-- **ABI version** – encoded as `MAJOR * 1_000_000 + MINOR * 1_000 + PATCH` (`IGNativeAbi.IG_PLUGIN_ABI_VERSION`). The host rejects plugins whose **major** version does not match.
-- **Memory ownership** – the plugin allocates pixel/animation buffers; the host calls back into the plugin's `FreePixelBuffer` / `FreeAnimationInfo` to release them. `FreePixelBuffer` **must be thread-safe** – it may be invoked from any thread when the host disposes the image.
+- **ABI version** – encoded as `MAJOR * 1_000_000 + MINOR * 1_000 + PATCH` (`IGNativeAbi.IG_PLUGIN_ABI_VERSION`). The host rejects plugins whose **major** version does not match. Always set every `StructSize` you allocate (`IGPluginApi`, `IGCodecApi`, `IGCodecCapability`): the host reads no field beyond it and refuses a codec that reports an unusable value.
+- **Memory ownership** – the plugin allocates decode pixel/animation buffers; the host calls back into the plugin's `FreePixelBuffer` / `FreeAnimationInfo` to release them. `FreePixelBuffer` **must be thread-safe** – it may be invoked from any thread when the host disposes the image. The **encode input** buffer is the exception: the host owns it, it is valid only for the duration of the call, and passing it to `FreePixelBuffer` frees host memory.
+- **Encoding** – the host hands the encoder a temp destination path it owns and moves the result into place, so write exactly that path and close the handle before returning on every path, including failure.
 - **Animation** – decoded animation frames must be **fully composed RGBA at full canvas size**. The host does not perform sub-rect composition or disposal/blend replay, so codecs like GIF/APNG must composite internally.
 - **Cancellation** – long operations receive an opaque cancellation token; poll `IGHostCoreApi.IsCancellationRequested` and return `IGStatus.Canceled` when set.
 
