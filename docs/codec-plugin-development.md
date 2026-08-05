@@ -29,6 +29,7 @@ publish and install a plugin.
   - [Step 9 – Write the manifest](#step-9--write-the-manifest)
   - [Step 10 – Publish as a Native AOT shared library](#step-10--publish-as-a-native-aot-shared-library)
   - [Step 11 – Install and test](#step-11--install-and-test)
+  - [Step 12 – Package a `.igplugin.zip`](#step-12--package-a-igpluginzip)
   - [Animated formats](#animated-formats)
   - [Encoding](#encoding)
   - [Rules you must not break](#rules-you-must-not-break)
@@ -183,15 +184,22 @@ internal static unsafe class Base64CodecPlugin
         if (_pluginApi != null) return _pluginApi;   // idempotent
         _hostApi = hostApi;                            // stash the host table for later
 
-        InitStrings();      // allocate the UTF-16 string buffers (Step 3)
-        InitCodecApi();     // wire up the IGCodecApi function pointers
-        InitPluginApi();    // wire up the IGPluginApi function pointers
+        try
+        {
+            InitStrings();      // allocate the UTF-16 string buffers (Step 3)
+            InitCodecApi();     // wire up the IGCodecApi function pointers
+            InitPluginApi();    // wire up the IGPluginApi function pointers
+        }
+        catch
+        {
+            return null;        // never let an exception cross the boundary
+        }
         return _pluginApi;
     }
 }
 ```
 
-Three things to internalize here:
+Four things to internalize here:
 
 1. **ABI version check.** `IG_PLUGIN_ABI_VERSION` is encoded as
    `MAJOR * 1_000_000 + MINOR * 1_000 + PATCH`. The host passes *its* version in; if your
@@ -204,6 +212,43 @@ Three things to internalize here:
    correct, not a leak.
 
 3. **Stash `hostApi`.** It's how you log and poll for cancellation later (Steps 7–8).
+
+4. **No exception may escape an `[UnmanagedCallersOnly]` method.** This applies to *every*
+   entry point you hand the host, not just this one. The frame between you and the host is
+   native, so the exception cannot be caught there: on .NET it fails fast and takes
+   ImageGlass down with it – no dialog, no log, no chance for the host to blame your plugin.
+   Wrap each entry point's body and convert the failure into an `IGStatus`:
+
+   ```csharp
+   [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+   private static IGStatus CodecDecodeStaticRaster(IGStringRef filePath, int frameIndex,
+       IGPixelBuffer* outBuf, void* cancellation)
+   {
+       if (outBuf == null) return IGStatus.InvalidArg;
+       *outBuf = default;
+
+       IGImageInfo info = default;
+       try
+       {
+           return DecodeInternal(filePath, cancellation, &info, outBuf);
+       }
+       catch (OutOfMemoryException)
+       {
+           return IGStatus.OutOfMemory;
+       }
+       catch (Exception ex)
+       {
+           Log(4, $"MyCodec: decode failed. {ex}");   // log ex, not ex.Message
+           return IGStatus.Internal;
+       }
+   }
+   ```
+
+   Log the whole exception rather than `ex.Message`: the common startup failure is a
+   `TypeInitializationException` whose *inner* exception names the real problem (a missing
+   native dependency, for instance). For `void` entry points (`FreePixelBuffer`,
+   `FreeAnimationInfo`, `Shutdown`) there is no status to return, so swallow – those can run
+   on the GC finalizer thread, where there is nobody to report to anyway.
 
 The plugin table itself is just identity plus four function pointers:
 
@@ -479,15 +524,15 @@ var srcInfo = codec.Info;
 int w = srcInfo.Width, h = srcInfo.Height;
 if (w <= 0 || h <= 0) return IGStatus.DecodeFailed;
 
-// 3) Allocate a native BGRA8 (premultiplied) buffer the host will own.
+// 3) Allocate a native BGRA8 (straight-alpha) buffer the host will own.
 ulong stride = (ulong)w * 4UL;
 ulong size   = stride * (ulong)h;
 if (size > int.MaxValue) return IGStatus.OutOfMemory;
 
+// NativeMemory.Alloc throws OutOfMemoryException; it never returns null.
 var pixels = (byte*)NativeMemory.Alloc((nuint)size);
-if (pixels == null) return IGStatus.OutOfMemory;
 
-var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
+var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Unpremul);
 var result  = codec.GetPixels(dstInfo, (nint)pixels);
 
 // IncompleteInput still yields a usable (partially-decoded) image.
@@ -514,6 +559,11 @@ Key points:
 
 - **You allocate, the host owns until it calls you back.** Fill every field of
   `IGPixelBuffer`. `Stride` must be at least `Width * bytesPerPixel`.
+- **`Bgra8Unorm` means straight (unpremultiplied) alpha.** The host maps it to
+  `SKAlphaType.Unpremul`, so writing premultiplied bytes under that tag is invisible on
+  opaque images and shows as dark halos on everything with alpha.
+- **`NativeMemory.Alloc` throws `OutOfMemoryException`** instead of returning null, so a
+  `== null` check after it is dead code. Let the entry point's catch map it (Step 2).
 - **`ReleaseContext`** is an opaque cookie the host hands back verbatim to your
   `FreePixelBuffer`. Use it to identify exactly what to free. The sample also keeps a
   `Dictionary<nint, nint>` keyed by the pixel pointer as bookkeeping.
@@ -535,21 +585,28 @@ thread-safe.** ImageGlass hands your pixels to SkiaSharp via
 private static void CodecFreePixelBuffer(IGPixelBuffer* buf)
 {
     if (buf == null || buf->Data == null) return;
-    nint key = (nint)buf->Data;
-    nint pixels;
-    lock (_bufLock)
+
+    try
     {
-        if (!_liveBuffers.Remove(key, out pixels)) return;   // unknown / double-free guard
+        nint key = (nint)buf->Data;
+        nint pixels;
+        lock (_bufLock)
+        {
+            if (!_liveBuffers.Remove(key, out pixels)) return;   // unknown / double-free guard
+        }
+        NativeMemory.Free((void*)pixels);
+        buf->Data = null;
+        buf->ReleaseContext = null;
     }
-    NativeMemory.Free((void*)pixels);
-    buf->Data = null;
-    buf->ReleaseContext = null;
+    catch { }   // void entry point: nothing to report, and the caller may be the finalizer
 }
 ```
 
 `NativeMemory.Free`, `free()`, and `CoTaskMemFree` are all thread-safe; the lock here
 protects the bookkeeping dictionary, not the free itself. The double-free guard (remove
-from the map first, bail if absent) is cheap insurance.
+from the map first, bail if absent) is cheap insurance. The `catch` is not optional: the
+thread that disposes the `SKImage` can be the GC finalizer thread, and an exception leaving
+this method kills the host (Step 2).
 
 > **The cardinal memory rule: whoever allocates, frees.** The plugin allocates pixel and
 > animation buffers; the host calls back into your `FreePixelBuffer` / `FreeAnimationInfo`
@@ -662,8 +719,26 @@ The output folder contains `Base64Codec.dll` (or `.so`/`.dylib`), the copied
 `igplugin.json`, and any native dependency the AOT publish emitted (for this sample,
 `libSkiaSharp`).
 
+> **Ship the published library, never a `dotnet build` output.** A plain build emits the
+> *managed* assembly under `bin/<config>/<tfm>/`, with the same file name and no
+> `ig_plugin_get_api` export. The host loads that file successfully, fails to resolve the
+> export, and skips the plugin – which looks exactly like "my plugin is ignored". The tell is
+> size: an AOT library is megabytes (this sample, ~1.6 MB), a managed assembly is a few KB.
+
+**Native dependencies resolve in the host process, not from your plugin folder.** Your
+`DllImport`s are resolved by the OS loader once ImageGlass is running, and its search order
+starts at the *ImageGlass executable's* directory – on Windows a copy sitting next to your
+library is not found. SkiaSharp works because ImageGlass already ships `libSkiaSharp` beside
+its own executable, so you can leave it out of your package (~12 MB saved). If you need a
+native dependency the host does not ship, do not rely on the plugin folder being searched:
+load it yourself by absolute path and register a `NativeLibrary.SetDllImportResolver`, or link
+it statically.
+
 
 ## Step 11 – Install and test
+
+There are two ways in: hand-copy the folder (below), or package a `.igplugin.zip` and let the
+user install it from **Settings > Plugins > Add** (see [Step 12](#step-12--package-a-igpluginzip)).
 
 Copy the **entire published folder** into the `_plugins` directory of ImageGlass's
 **config directory**. The config directory depends on your platform:
@@ -699,6 +774,36 @@ Make a test file from any image and open it:
 
 Open `test.b64` in ImageGlass – it renders as the original image. If it doesn't, see
 [Troubleshooting](#troubleshooting).
+
+
+## Step 12 – Package a `.igplugin.zip`
+
+For distribution, zip the published payload as `<name>.igplugin.zip` – the only format
+**Settings > Plugins > Add** accepts. `igplugin.json` must sit at the archive root or exactly
+one folder below it:
+
+```text
+my-codec_win-x64.igplugin.zip
+    Plugin_MyCodec/
+        igplugin.json
+        MyCodec.dll
+```
+
+```pwsh
+$src = "bin/publish/win-x64"
+Compress-Archive -Path "$src/*.dll", "$src/igplugin.json" `
+    -DestinationPath my-codec_win-x64.igplugin.zip
+```
+
+Leave out anything the host never reads: debug symbols (`.pdb`, `.dbg`, `.dSYM`), the SDK's
+`.xml` IntelliSense docs, and any native dependency ImageGlass already ships (see Step 10).
+Zip on any platform – ILCompiler produces a `644` shared library, so there is no executable
+bit to preserve.
+
+Installing extracts the payload to `_plugins/<plugin id>/`. Trust is keyed by plugin **id**
+and survives a reinstall, so re-installing a byte-identical library stays enabled and loads
+immediately, while a rebuilt library no longer matches the pinned hash and asks for one
+re-consent click.
 
 
 ## Animated formats
@@ -813,13 +918,13 @@ private static IGStatus CodecEncodeStaticRaster(IGStringRef destFilePath, IGPixe
     if (source == null || source->Data == null) return IGStatus.InvalidArg;
     if (source->PixelFormat != (int)IGPixelFormat.Bgra8Unorm) return IGStatus.Unsupported;
 
-    var destPath = new string(destFilePath.Data, 0, destFilePath.Length);
-    var quality  = ReadQuality(options);
-
-    if (IsCanceled(cancellation)) return IGStatus.Canceled;
-
     try
     {
+        var destPath = new string(destFilePath.Data, 0, destFilePath.Length);
+        var quality  = ReadQuality(options);
+
+        if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
         var info = new SKImageInfo(source->Width, source->Height,
             SKColorType.Bgra8888, SKAlphaType.Unpremul);
 
@@ -930,6 +1035,9 @@ host" or "works on my machine but not in production."
   `IGCodecCapability` in place (new `StructSize` members, a pointer-returning `GetCapability`,
   renamed capability flags) *without* a version bump. A library built against the older
   contract is refused per codec by the `IGCodecApi.StructSize` check.
+- **No exception may escape an `[UnmanagedCallersOnly]` entry point.** The host cannot catch
+  it across the native frame; it fails fast and the app dies. Guard every entry point and
+  return an `IGStatus` instead (Step 2).
 - **Memory ownership.** Whoever allocates frees. You allocate decode pixel buffers and
   animation info; the host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
   **The encode input buffer is the exception: the host owns it.** Never retain it and never
@@ -961,7 +1069,11 @@ host" or "works on my machine but not in production."
 
 | Symptom | Likely cause |
 | --- | --- |
-| Plugin silently doesn't load | Not yet enabled in **Settings > Plugins** (new plugins load only after you trust them), or the DLL changed since you trusted it (hash mismatch: re-enable), or `ig_plugin_get_api` returned `null` (major ABI mismatch), or `executable` doesn't match the library filename. |
+| Plugin silently doesn't load | Not yet enabled in **Settings > Plugins** (new plugins load only after you trust them), or the DLL changed since you trusted it (hash mismatch: re-enable), or `ig_plugin_get_api` returned `null` (major ABI mismatch), or `executable` doesn't match the library filename. **Settings > Plugins** shows the loader's own reason. |
+| Row says "Not loaded" while the toggle is on | The library is trusted but did not load. Hover the status for the loader's message – usually a managed assembly instead of an AOT library (Step 10), a stale contract (`StructSize` mismatch: rebuild), or quarantine. |
+| Packaged plugin never loads, no error | You zipped a `dotnet build` output. It has no `ig_plugin_get_api` export; check the size (KB = managed, MB = AOT). See Step 10. |
+| ImageGlass dies outright when opening your format | A managed exception escaped one of your entry points – uncatchable across the ABI. Guard them all (Step 2). A missing native dependency surfaces this way, as a `TypeInitializationException` on the first call that touches it. |
+| Dark halos / muddy edges on transparent images | Premultiplied pixels tagged `Bgra8Unorm`, which means straight alpha. Decode with `SKAlphaType.Unpremul`. |
 | Plugin loaded once, then never again | It hard-crashed the host during a previous load and was quarantined. Fix the crash, then clear `{ConfigDir}/_plugins/_quarantine/`. |
 | Host loads it but the file won't open | `CanHandleExtension` returned 0 for that extension, or a built-in codec out-bid your `DecodePriority`. Raise the priority or check the extension string (lowercase, leading dot). |
 | Crash on close / intermittent crash | `FreePixelBuffer` isn't thread-safe, or you freed a buffer you'd already freed. Use the remove-from-map-first guard. |
