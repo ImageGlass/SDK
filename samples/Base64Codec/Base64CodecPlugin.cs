@@ -73,6 +73,9 @@ internal static unsafe class Base64CodecPlugin
 
 
     // ------------------------------ Entry point ------------------------------
+    //
+    // Every [UnmanagedCallersOnly] entry point below is a hard ABI boundary: an escaping managed
+    // exception cannot be caught by the host and kills the app, so each one ends in a catch.
 
     [UnmanagedCallersOnly(EntryPoint = IGNativeAbi.ENTRY_POINT_NAME, CallConvs = [typeof(CallConvCdecl)])]
     public static IGPluginApi* GetApi(int hostAbiVersion, IGHostApi* hostApi)
@@ -84,10 +87,18 @@ internal static unsafe class Base64CodecPlugin
         if (_pluginApi != null) return _pluginApi;
         _hostApi = hostApi;
 
-        InitStrings();
-        InitCapability();
-        InitCodecApi();
-        InitPluginApi();
+        try
+        {
+            InitStrings();
+            InitCapability();
+            InitCodecApi();
+            InitPluginApi();
+        }
+        catch
+        {
+            // returning null is the ABI's "refused"; the host logs it and skips the plugin
+            return null;
+        }
         return _pluginApi;
     }
 
@@ -140,7 +151,17 @@ internal static unsafe class Base64CodecPlugin
     {
         if (outInfo == null) return IGStatus.InvalidArg;
         *outInfo = default;
-        return DecodeInternal(filePath, cancellation, outInfo, null);
+
+        try
+        {
+            return DecodeInternal(filePath, cancellation, outInfo, null);
+        }
+        catch (Exception ex)
+        {
+            // e.g. a missing libSkiaSharp surfaces here as a type-initializer failure
+            Log(4, $"Base64Codec: LoadMetadata failed. {ex}");
+            return IGStatus.Internal;
+        }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -152,7 +173,16 @@ internal static unsafe class Base64CodecPlugin
         if (frameIndex != 0) return IGStatus.InvalidArg;
 
         IGImageInfo info = default;
-        return DecodeInternal(filePath, cancellation, &info, outBuf);
+
+        try
+        {
+            return DecodeInternal(filePath, cancellation, &info, outBuf);
+        }
+        catch (Exception ex)
+        {
+            Log(4, $"Base64Codec: DecodeStaticRaster failed. {ex}");
+            return IGStatus.Internal;
+        }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -160,17 +190,23 @@ internal static unsafe class Base64CodecPlugin
     {
         if (buf == null || buf->Data == null) return;
 
-        nint key = (nint)buf->Data;
-        nint pixels;
-        lock (_bufLock)
+        // The host may call this from any thread, including the GC finalizer thread, where an
+        // escaping exception is fatal and there is nobody to report it to.
+        try
         {
-            // Not one of ours: either already freed, or this is an ENCODE input
-            // buffer the host owns. Never free memory we did not allocate.
-            if (!_liveBuffers.Remove(key, out pixels)) return;
+            nint key = (nint)buf->Data;
+            nint pixels;
+            lock (_bufLock)
+            {
+                // Not one of ours: either already freed, or this is an ENCODE input
+                // buffer the host owns. Never free memory we did not allocate.
+                if (!_liveBuffers.Remove(key, out pixels)) return;
+            }
+            NativeMemory.Free((void*)pixels);
+            buf->Data = null;
+            buf->ReleaseContext = null;
         }
-        NativeMemory.Free((void*)pixels);
-        buf->Data = null;
-        buf->ReleaseContext = null;
+        catch { }
     }
 
 
@@ -193,13 +229,15 @@ internal static unsafe class Base64CodecPlugin
         // a future host may hand over a wider format.
         if (source->PixelFormat != (int)IGPixelFormat.Bgra8Unorm) return IGStatus.Unsupported;
 
-        var destPath = new string(destFilePath.Data, 0, destFilePath.Length);
-        var quality = ReadQuality(options);
-
-        if (IsCanceled(cancellation)) return IGStatus.Canceled;
+        var destPath = string.Empty;
 
         try
         {
+            destPath = new string(destFilePath.Data, 0, destFilePath.Length);
+            var quality = ReadQuality(options);
+
+            if (IsCanceled(cancellation)) return IGStatus.Canceled;
+
             // 1) Wrap the host pixels and PNG-encode them. FromPixelCopy copies, so
             //    nothing outlives the call. (PNG ignores quality; it is passed for
             //    illustration of how options reach the encoder.)
@@ -242,7 +280,7 @@ internal static unsafe class Base64CodecPlugin
         }
         catch (Exception ex)
         {
-            Log(4, $"Base64Codec: unexpected encode failure ({ex.Message}).");
+            Log(4, $"Base64Codec: unexpected encode failure. {ex}");
             return IGStatus.Internal;
         }
     }

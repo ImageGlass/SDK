@@ -56,6 +56,28 @@ dotnet publish samples/Base64Codec/Base64Codec.csproj `
 This produces `Base64Codec.dll` next to `igplugin.json`. (Use `-r linux-x64` /
 `-r osx-arm64` and the matching `-p:Platform` for other targets.)
 
+> **Publish, never `dotnet build`.** A plain build emits the *managed* assembly, which
+> exports no `ig_plugin_get_api`; the host loads the file and then skips the plugin. If a
+> published `Base64Codec.dll` is only a few KB, it is the managed one, not the AOT library.
+
+## Package
+
+Zip the published files for the host's **Settings > Plugins > Add** button. `igplugin.json`
+must sit at the archive root or one folder below it; skip the `.pdb`s.
+
+```text
+Plugin_SampleBase64Codec.igplugin.zip
+    Base64Codec.dll
+    igplugin.json
+    libSkiaSharp.dll
+```
+
+```powershell
+$src = "samples/Base64Codec/bin/publish/win-x64"
+Compress-Archive -Path "$src/*.dll", "$src/igplugin.json" `
+    -DestinationPath Plugin_SampleBase64Codec.igplugin.zip
+```
+
 ## Install
 
 Copy the published folder (containing the DLL, `igplugin.json`, and the native

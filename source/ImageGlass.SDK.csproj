@@ -64,7 +64,14 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+
+    <!--
+      Do NOT pack on build. Packing is a release step (`dotnet pack`, see
+      .github/workflows/release.yml, which already forces this to false to dodge
+      NU5026). On build it only drops a stale dist\ImageGlass.SDK.1.0.0.nupkg -
+      the fallback version above, never a real one - every time a sample is built.
+    -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   

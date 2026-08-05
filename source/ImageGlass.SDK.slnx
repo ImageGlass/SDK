@@ -17,6 +17,13 @@
     </Project>
   </Folder>
   <Project Path="ImageGlass.SDK.csproj">
+    <!--
+      "Any CPU" MUST map to x64 here, exactly like the samples above. Without this
+      row the samples build as x64 while this project falls back to its own AnyCPU
+      default, so the SDK is never rebuilt for x64 and the samples silently compile
+      against a stale x64 reference assembly in obj\x64\.
+    -->
+    <Platform Solution="*|Any CPU" Project="x64" />
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />
   </Project>
