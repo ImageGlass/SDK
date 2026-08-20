@@ -13,10 +13,11 @@ Explore the community plugins listed below.
 > Plugins execute with full permissions and can run arbitrary code on your system. Only install and enable third-party plugins from trusted sources and authors.
 
 
-| Plugin | Type | Author | Description | Platforms |
-| :--- | :--- | :--- | :--- | :--- |
-| [ITHMB Codec](https://github.com/B67687/Imageglass-Ithmb-Plugin) | Codec | [B67687](https://github.com/B67687) | C ABI plugin to decode `.ithmb` thumbnail files using [Ithmb-Codec](https://github.com/B67687/Ithmb-Codec) | 🪟 🍎 🐧 |
-| [APNG Codec](https://github.com/d2phap/apng-imageglass-plugin) | Codec | [d2phap](https://github.com/d2phap) | Animated APNG codec plugin for ImageGlass | 🪟 🍎 🐧 |
+| Plugin | Author | Description | Platforms |
+| :--- | :--- | :--- | :--- |
+| [WIC Codec](https://github.com/d2phap/wic-imageglass-plugin) | [d2phap](https://github.com/d2phap) | Brings the Windows Imaging Component into ImageGlass as a native codec plugin including JPEG XR (`.jxr`, `.hdp`, `.wdp`) | 🪟 |
+| [APNG Codec](https://github.com/d2phap/apng-imageglass-plugin) | [d2phap](https://github.com/d2phap) | Animated APNG codec plugin for ImageGlass | 🪟🍎🐧 |
+| [ITHMB Codec](https://github.com/B67687/Imageglass-Ithmb-Plugin) | [B67687](https://github.com/B67687) | C ABI plugin to decode `.ithmb` thumbnail files using [Ithmb-Codec](https://github.com/B67687/Ithmb-Codec) | 🪟🍎🐧 |
 
 
 ## FAQs
