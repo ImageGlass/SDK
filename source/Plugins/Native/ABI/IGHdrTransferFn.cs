@@ -33,8 +33,14 @@ public enum IGHdrTransferFn : int
     GainMap = 3,
 
     /// <summary>
-    /// Scene-referred linear HDR (e.g. OpenEXR, Radiance HDR, JPEG-XR float).
-    /// Pixels are already linear and may exceed 1.0.
+    /// Scene-referred linear HDR (e.g. OpenEXR, Radiance HDR).
+    /// Pixels are already linear, may exceed 1.0, and 1.0 IS diffuse white.
     /// </summary>
     Linear = 4,
+
+    /// <summary>
+    /// scRGB extended-range linear (IEC 61966-2-2), the color space WIC infers for every
+    /// float / fixed-point format. Like <see cref="Linear"/>, but 1.0 is 80 nits, NOT white.
+    /// </summary>
+    ScRgb = 5,
 }

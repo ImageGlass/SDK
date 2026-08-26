@@ -110,9 +110,13 @@ extern "C" {
  * version was deliberately NOT bumped. Every plugin must be rebuilt against this
  * header. A plugin built against the earlier contract is refused per codec by the
  * IGCodecApi.StructSize check.
+ *
+ * MINOR 1 (1001000 and later) added IGHdrTransferFn_ScRgb. Emitting it to an
+ * older host degrades to IGHdrTransferFn_None, so gate it on the hostAbiVersion
+ * passed to ig_plugin_get_api and fall back to IGHdrTransferFn_Linear below 1001000.
  * ========================================================================= */
 
-#define IG_PLUGIN_ABI_VERSION 1000000
+#define IG_PLUGIN_ABI_VERSION 1001001
 #define IG_PLUGIN_ABI_MAJOR   1
 #define IG_PLUGIN_ENTRY_POINT_NAME "ig_plugin_get_api"
 
@@ -156,7 +160,8 @@ typedef enum IGHdrTransferFn {
     IGHdrTransferFn_PQ      = 1,
     IGHdrTransferFn_HLG     = 2,
     IGHdrTransferFn_GainMap = 3,
-    IGHdrTransferFn_Linear  = 4
+    IGHdrTransferFn_Linear  = 4, /* scene-referred linear; 1.0 IS diffuse white */
+    IGHdrTransferFn_ScRgb   = 5  /* scRGB extended-range linear; 1.0 is 80 nits, NOT white */
 } IGHdrTransferFn;
 
 /* IGPluginKind is manifest JSON only ("kind": "Codec") and never crosses the ABI.

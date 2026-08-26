@@ -16,7 +16,7 @@ public static class IGNativeAbi
     /// The current native plugin ABI version. Encoded as MAJOR * 1_000_000 + MINOR * 1_000 + PATCH.
     /// Major-version mismatch causes the host to reject the plugin outright.
     /// </summary>
-    public const int IG_PLUGIN_ABI_VERSION = 1_000_000;
+    public const int IG_PLUGIN_ABI_VERSION = 1_001_001;
 
     /// <summary>
     /// Major component of <see cref="IG_PLUGIN_ABI_VERSION"/>. Plugins and host must agree on this.
