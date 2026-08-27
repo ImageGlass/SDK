@@ -220,4 +220,23 @@ public unsafe struct IGCodecApi
     /// </para>
     /// </summary>
     public delegate* unmanaged[Cdecl]<void*, int, void*, IGStatus> EndEncodeMultiFrame;
+
+    /// <summary>
+    /// Decodes a static raster frame no larger than <c>maxWidth</c> x <c>maxHeight</c>, for
+    /// thumbnails and previews. Optional; may be null, and the host then falls back to
+    /// <see cref="DecodeStaticRaster"/> and downscales the full-size result itself.
+    /// Signature: <c>IGStatus DecodeStaticRasterScaled(IGStringRef filePath, int frameIndex, int maxWidth, int maxHeight, IGPixelBuffer* outBuffer, void* cancellation)</c>.
+    /// <para>
+    /// The box is an upper bound, not an exact size: return whatever the format decodes to
+    /// cheaply (a JPEG's DCT scales, an embedded thumbnail) as long as neither side exceeds it,
+    /// and report the real size in <see cref="IGPixelBuffer.Width"/>/<see cref="IGPixelBuffer.Height"/>.
+    /// A source already within the box is returned unscaled. Aspect ratio must be preserved.
+    /// </para>
+    /// <para>
+    /// Ownership matches <see cref="DecodeStaticRaster"/>: the plugin allocates and the host
+    /// releases through <see cref="FreePixelBuffer"/>. Added in ABI 1.2.0, so the host reads it
+    /// only when <see cref="StructSize"/> covers it.
+    /// </para>
+    /// </summary>
+    public delegate* unmanaged[Cdecl]<IGStringRef, int, int, int, IGPixelBuffer*, void*, IGStatus> DecodeStaticRasterScaled;
 }

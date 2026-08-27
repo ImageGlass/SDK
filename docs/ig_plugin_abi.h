@@ -116,7 +116,7 @@ extern "C" {
  * passed to ig_plugin_get_api and fall back to IGHdrTransferFn_Linear below 1001000.
  * ========================================================================= */
 
-#define IG_PLUGIN_ABI_VERSION 1001001
+#define IG_PLUGIN_ABI_VERSION 1002000
 #define IG_PLUGIN_ABI_MAJOR   1
 #define IG_PLUGIN_ENTRY_POINT_NAME "ig_plugin_get_api"
 
@@ -400,6 +400,19 @@ typedef struct IGCodecApi {
      * handle and free session state on BOTH paths. */
     IGStatus (*EndEncodeMultiFrame)(void* session, int32_t commit,
                                     void* cancellation);
+
+    /* --- optional scaled decode for thumbnails/previews (ABI 1.2.0) ---
+     *
+     * May be NULL; the host then decodes full size and downscales itself. The
+     * box is an upper bound, not an exact size: return whatever the format
+     * decodes to cheaply (JPEG DCT scales, an embedded thumbnail) so long as
+     * neither side exceeds it, keep the aspect ratio, and report the real size
+     * in outBuffer. A source already inside the box comes back unscaled.
+     * Ownership matches DecodeStaticRaster: the host frees via FreePixelBuffer. */
+    IGStatus (*DecodeStaticRasterScaled)(IGStringRef filePath, int32_t frameIndex,
+                                         int32_t maxWidth, int32_t maxHeight,
+                                         IGPixelBuffer* outBuffer,
+                                         void* cancellation);
 } IGCodecApi;
 
 /* ===========================================================================

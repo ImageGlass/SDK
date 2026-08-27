@@ -436,8 +436,32 @@ private static void InitCodecApi()
     _codecApi->BeginEncodeMultiFrame  = null;
     _codecApi->EncodeFrame            = null;
     _codecApi->EndEncodeMultiFrame    = null;
+
+    // Optional; null means the host decodes full size and downscales itself.
+    _codecApi->DecodeStaticRasterScaled = null;
 }
 ```
+
+### Scaled decode (optional, ABI 1.2.0)
+
+Gallery thumbnails and viewer previews ask for a small image, and without
+`DecodeStaticRasterScaled` every one of them costs a full-resolution decode plus a
+full-resolution buffer the host immediately shrinks. Implement it when the format can decode
+below full size cheaply (JPEG DCT scales, an embedded thumbnail, a progressive/pyramidal
+container):
+
+```csharp
+_codecApi->DecodeStaticRasterScaled = &CodecDecodeStaticRasterScaled;
+```
+
+`maxWidth`/`maxHeight` are an upper bound, not an exact size. Return the cheapest result that
+fits, preserve the aspect ratio, report the real size in `IGPixelBuffer`, and return a source
+already inside the box unscaled. Ownership is identical to `DecodeStaticRaster`: the plugin
+allocates, the host frees through `FreePixelBuffer`.
+
+Leaving it null is always safe, and so is returning `IGStatus.Unsupported`; the host falls back
+to the full-size path. Older hosts ignore the field entirely, since it lives past the
+`StructSize` they know.
 
 
 ## Step 5 – Load metadata
@@ -1102,8 +1126,9 @@ Every type below lives in the `ImageGlass.SDK.Plugins` namespace.
   `Shutdown`, `SelfTest`.
 - [`IGCodecApi`](../source/Plugins/Native/API/IGCodecApi.cs) – `StructSize`, `GetCapability`,
   `CanHandleExtension`, `CanHandleSignature`, `LoadMetadata`, `DecodeStaticRaster`,
-  `FreePixelBuffer`, the animation decode trio, `EncodeStaticRaster`, and the multi-frame
-  encode session (`BeginEncodeMultiFrame`, `EncodeFrame`, `EndEncodeMultiFrame`).
+  `FreePixelBuffer`, the animation decode trio, `EncodeStaticRaster`, the multi-frame
+  encode session (`BeginEncodeMultiFrame`, `EncodeFrame`, `EndEncodeMultiFrame`), and the
+  optional `DecodeStaticRasterScaled`.
 
 **Data structs & enums**
 - [`IGCodecCapability`](../source/Plugins/Native/ABI/IGCodecCapability.cs)

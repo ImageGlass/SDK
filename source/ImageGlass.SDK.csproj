@@ -28,7 +28,7 @@
       Passing -p:Version=... leaves these two intact, avoiding CS7034
       "version string does not conform".
     -->
-    <Version>1.1.1</Version>
+    <Version>1.2.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
 
