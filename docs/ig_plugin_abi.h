@@ -403,6 +403,8 @@ typedef struct IGCodecApi {
 
     /* --- optional scaled decode for thumbnails/previews (ABI 1.2.0) ---
      *
+     * Requires a host at ABI 1.2.0 or later.
+     *
      * May be NULL; the host then decodes full size and downscales itself. The
      * box is an upper bound, not an exact size: return whatever the format
      * decodes to cheaply (JPEG DCT scales, an embedded thumbnail) so long as

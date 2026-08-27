@@ -44,20 +44,9 @@ in-process via `NativeLibrary.Load`. There are no .NET interfaces across the bou
 the host and plugin talk through a hand-rolled **C ABI**: `[StructLayout(LayoutKind.Sequential)]`
 structs full of `delegate* unmanaged[Cdecl]<...>` function pointers.
 
-The handshake is three layers deep:
-
-```
-1. Host calls your single C export:
-   const IGPluginApi* ig_plugin_get_api(int hostAbiVersion, const IGHostApi* hostApi)
-
-2. You return an IGPluginApi table:
-   identity + GetCodec / Initialize / Shutdown / SelfTest
-
-3. For each codec, GetCodec hands back an IGCodecApi table:
-   GetCapability, CanHandleExtension, CanHandleSignature,
-   LoadMetadata, DecodeStaticRaster, FreePixelBuffer
-   (+ animation decode entry points, + encode entry points)
-```
+The handshake is three layers deep: one C export returns an `IGPluginApi` table (identity +
+`GetCodec`/`Initialize`/`Shutdown`/`SelfTest`), and `GetCodec` returns one `IGCodecApi` table
+per codec (the entry points below, plus the optional animation and encode ones).
 
 ```
    ImageGlass host                         Your plugin (.dll)
@@ -220,27 +209,12 @@ Four things to internalize here:
    Wrap each entry point's body and convert the failure into an `IGStatus`:
 
    ```csharp
-   [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-   private static IGStatus CodecDecodeStaticRaster(IGStringRef filePath, int frameIndex,
-       IGPixelBuffer* outBuf, void* cancellation)
+   try { return DoTheWork(...); }
+   catch (OutOfMemoryException) { return IGStatus.OutOfMemory; }
+   catch (Exception ex)
    {
-       if (outBuf == null) return IGStatus.InvalidArg;
-       *outBuf = default;
-
-       IGImageInfo info = default;
-       try
-       {
-           return DecodeInternal(filePath, cancellation, &info, outBuf);
-       }
-       catch (OutOfMemoryException)
-       {
-           return IGStatus.OutOfMemory;
-       }
-       catch (Exception ex)
-       {
-           Log(4, $"MyCodec: decode failed. {ex}");   // log ex, not ex.Message
-           return IGStatus.Internal;
-       }
+       Log(4, $"MyCodec: ... failed. {ex}");   // log ex, not ex.Message
+       return IGStatus.Internal;
    }
    ```
 
@@ -338,11 +312,12 @@ private static void InitCapability()
 ```
 
 **Always set `StructSize`.** It must equal `sizeof(IGCodecCapability)` as your build sees it.
-The host reads no field beyond it and rejects the codec outright if the value is outside the
-range it understands. Allocating with a zero-filling allocator (`NativeMemory.AllocZeroed`,
-`calloc`) means a forgotten `StructSize` reads as 0 and is refused cleanly instead of being
-undefined behavior. The same rule applies to `IGCodecApi.StructSize` and
-`IGPluginApi.StructSize`.
+The host reads no field beyond it, and rejects the codec outright if the value is below the
+minimum it requires. A value *above* the host's own `sizeof` is fine from ABI 1.2.0 - it reads
+the members it knows and ignores the rest - but older hosts refuse that too. Allocating with a
+zero-filling allocator (`NativeMemory.AllocZeroed`, `calloc`) means a forgotten `StructSize`
+reads as 0 and is refused cleanly instead of being undefined behavior. The same rule applies
+to `IGCodecApi.StructSize` and `IGPluginApi.StructSize`.
 
 **Capabilities are a 2x2, and each quadrant is independent:**
 
@@ -372,17 +347,15 @@ carries no extension list at all: what a codec can read and write is declared he
 The user can narrow either set per plugin in ImageGlass's plugin settings, so ship the full
 set you actually support and let them switch off what they do not want.
 
-**Codec selection is priority-based, and trust is the only gate.** When several codecs (yours,
-plus built-ins) can handle a file, the host picks the highest `DecodePriority`, or
-`MetadataPriority` for metadata loads, or `EncodePriority` when saving. Enabling a plugin is
-an explicit act of trust, so an enabled plugin's priority is honored as reported, even for a
-format the host has a built-in codec for. Ties go to the codec registered first, and built-ins
-register first, so report a strictly higher number to take a format over.
+**Codec selection is priority-based, and trust is the only gate.** When several codecs can
+handle a file the host picks the highest `DecodePriority` (or `MetadataPriority` / `EncodePriority`
+for those operations). Enabling a plugin is an explicit act of trust, so its priority is honored
+as reported even for a format the host has a built-in for; ties go to whoever registered first,
+and built-ins register first, so report a strictly higher number to take a format over.
 
-That makes claiming a common extension a real responsibility: at `DecodePriority` 200 you
-become the decoder for every such file the user opens. Prefer formats the built-ins do not
-handle, and where you do overlap, expect users to untick the extensions they would rather
-leave to the built-in codec.
+That makes claiming a common extension a real responsibility - at 200 you become the decoder for
+every such file the user opens. Prefer formats the built-ins do not handle, and where you do
+overlap, expect users to untick the ones they would rather leave to the built-in codec.
 
 
 ## Step 4 – Match files by extension
@@ -460,8 +433,12 @@ already inside the box unscaled. Ownership is identical to `DecodeStaticRaster`:
 allocates, the host frees through `FreePixelBuffer`.
 
 Leaving it null is always safe, and so is returning `IGStatus.Unsupported`; the host falls back
-to the full-size path. Older hosts ignore the field entirely, since it lives past the
-`StructSize` they know.
+to the full-size path.
+
+**This member requires a host at ABI 1.2.0 or later**, and that applies to the whole plugin,
+not just scaled decode: an older host refuses a codec whose `IGCodecApi` is longer than its
+own, so a library built against SDK 1.2.0 does not load there at all. Build against the SDK
+matching the oldest ImageGlass you intend to support.
 
 
 ## Step 5 – Load metadata
@@ -632,18 +609,15 @@ from the map first, bail if absent) is cheap insurance. The `catch` is not optio
 thread that disposes the `SKImage` can be the GC finalizer thread, and an exception leaving
 this method kills the host (Step 2).
 
-> **The cardinal memory rule: whoever allocates, frees.** The plugin allocates pixel and
-> animation buffers; the host calls back into your `FreePixelBuffer` / `FreeAnimationInfo`
-> to release them. Never free a buffer the host gave you, and never expect the host to
-> `free()` a pointer with an allocator it doesn't know about – that's why you free your own.
-
-> **`FreePixelBuffer` is best-effort, not guaranteed for every buffer.** At host shutdown
-> (or when the host reloads your plugin) the host may unload your library while images
-> backed by your buffers are still alive. In that case the host **skips** the remaining
-> `FreePixelBuffer` calls – unloading the library reclaims your buffers with it. So free
-> only memory you allocated inside the library. Do **not** rely on `FreePixelBuffer` to run
-> for externally-observable cleanup (temp files, sockets, host callbacks); use `Shutdown`
-> for that, and note `Shutdown` can be called while buffers are still outstanding.
+> **The cardinal memory rule: whoever allocates, frees.** You allocate pixel and animation
+> buffers and the host calls back to release them; never free a buffer the host gave you, and
+> never expect the host to `free()` a pointer from an allocator it doesn't know.
+>
+> **But it is best-effort.** Unloading your library (host shutdown, plugin reload) while images
+> backed by your buffers are alive makes the host **skip** the remaining `FreePixelBuffer`
+> calls – the unload reclaims them. So free only in-library memory here, and never rely on it
+> for externally-observable cleanup (temp files, sockets, host callbacks); use `Shutdown` for
+> that, which can itself run while buffers are still outstanding.
 
 
 ## Step 8 – Honor cancellation
@@ -824,10 +798,9 @@ Leave out anything the host never reads: debug symbols (`.pdb`, `.dbg`, `.dSYM`)
 Zip on any platform – ILCompiler produces a `644` shared library, so there is no executable
 bit to preserve.
 
-Installing extracts the payload to `_plugins/<plugin id>/`. Trust is keyed by plugin **id**
-and survives a reinstall, so re-installing a byte-identical library stays enabled and loads
-immediately, while a rebuilt library no longer matches the pinned hash and asks for one
-re-consent click.
+Installing extracts the payload to `_plugins/<plugin id>/`. Trust is keyed by plugin **id**, so
+a byte-identical reinstall stays enabled while a rebuilt library asks for one re-consent click
+(Step 11).
 
 
 ## Animated formats
@@ -1045,48 +1018,36 @@ The user's original file is never touched for any of these, so a failure is alwa
 ## Rules you must not break
 
 These are baked into the contract. Violating them is how a plugin "loads but crashes the
-host" or "works on my machine but not in production."
+host" or "works on my machine but not in production." Each links to where it is explained.
 
-- **ABI versioning.** `IG_PLUGIN_ABI_VERSION = MAJOR * 1_000_000 + MINOR * 1_000 + PATCH`.
-  The host **rejects** plugins whose **major** version differs. **Reordering, inserting, or
-  removing fields is breaking.** Appending to the *end* of a struct is only backward-compatible
-  where that struct carries a `StructSize` **and the side that allocates it sets it** – that is
-  what bounds the reader. Where the allocating side has no `StructSize`
-  (`IGAnimationFrameInfo`, whose array you allocate and the host strides), appending is
-  breaking too. Always set every `StructSize` you own: `IGPluginApi`, `IGCodecApi`,
-  `IGCodecCapability`.
-- **The revised v1 contract requires a rebuild.** Encoding support changed `IGCodecApi` and
-  `IGCodecCapability` in place (new `StructSize` members, a pointer-returning `GetCapability`,
-  renamed capability flags) *without* a version bump. A library built against the older
-  contract is refused per codec by the `IGCodecApi.StructSize` check.
-- **No exception may escape an `[UnmanagedCallersOnly]` entry point.** The host cannot catch
-  it across the native frame; it fails fast and the app dies. Guard every entry point and
-  return an `IGStatus` instead (Step 2).
-- **Memory ownership.** Whoever allocates frees. You allocate decode pixel buffers and
-  animation info; the host calls your `FreePixelBuffer` / `FreeAnimationInfo` to release them.
-  **The encode input buffer is the exception: the host owns it.** Never retain it and never
-  pass it to `FreePixelBuffer`.
-- **Encoders never name their own destination.** Write exactly the temp path you are given,
-  completely, and close the handle before returning on every path. The host moves it into place;
-  it also owns cleanup, so do not delete it on failure.
-- **`FreePixelBuffer` must be thread-safe** – Skia may call it from any thread on dispose.
-- **`FreePixelBuffer` is not guaranteed to run for every buffer.** If the host unloads your
-  library (shutdown/reload) while buffers are outstanding, it skips the remaining frees; the
-  unload reclaims them. Free only in-library memory there – never rely on it for external cleanup.
-- **Animation frames are fully composed RGBA.** No host-side compositing, no sub-rect output,
-  no disposal/blend replay.
-- **Animation frames may differ in size.** The host adopts each frame's own dimensions and
-  re-fits the viewport. Uniform sizing is no longer required – but a frame is always its own
-  full canvas; there is no placement offset inside a larger one.
-- **Cancellation** is an opaque `void*`; poll `IGHostCoreApi.IsCancellationRequested` and
-  return `IGStatus.Canceled`.
-- **Strings handed to the host (`IGStringRef`) must stay valid long enough** – capability
-  strings and extensions for the plugin's lifetime; the sample pre-allocates them as
-  process-lifetime buffers.
-- **Free your own allocations on the failure path.** The host only calls `FreePixelBuffer`
-  for calls that returned `IGStatus.OK`.
-- **Discovery is not trust.** A newly installed plugin does not run until the user enables it
-  in Settings > Plugins; enabling pins the library's SHA-256, and changing the file revokes it.
+- **No exception may escape an `[UnmanagedCallersOnly]` entry point** - the host cannot catch it
+  across the native frame and the app dies. [Step 2](#step-2--export-the-entry-point)
+- **Set every `StructSize` you own** (`IGPluginApi`, `IGCodecApi`, `IGCodecCapability`) to your
+  own `sizeof`. [Step 3](#step-3--advertise-the-codecs-capabilities)
+- **The host rejects a plugin whose ABI *major* differs**, and reordering/inserting/removing a
+  field is breaking; only appending past a `StructSize` is not.
+- **The revised v1 contract requires a rebuild.** Encoding changed `IGCodecApi` and
+  `IGCodecCapability` in place without a version bump, so older libraries are refused per codec.
+- **Whoever allocates frees** - you allocate decode buffers, the host calls your
+  `FreePixelBuffer` / `FreeAnimationInfo`. [Step 7](#step-7--free-the-buffer-thread-safe)
+- **The encode input buffer is the host's.** Never retain it, never pass it to
+  `FreePixelBuffer`. [Encoding](#the-source-buffer-belongs-to-the-host)
+- **`FreePixelBuffer` must be thread-safe** - Skia may call it from any thread on dispose.
+- **`FreePixelBuffer` is not guaranteed to run for every buffer** - a host unload skips the
+  rest, so free only in-library memory there and never external resources.
+- **Free your own allocations on the failure path** - the host only calls `FreePixelBuffer`
+  after an `IGStatus.OK`.
+- **Encoders never name their own destination** - write exactly the temp path given, completely,
+  and close the handle on every path. [Encoding](#the-destination-path-is-a-host-temp-file)
+- **Animation frames are fully composed RGBA**, each its own full canvas: no host-side
+  compositing, sub-rect output, disposal replay, or placement offset. Sizes may differ per
+  frame. [Animated formats](#animated-formats)
+- **Cancellation is an opaque `void*`** - poll `IGHostCoreApi.IsCancellationRequested` and
+  return `IGStatus.Canceled`. [Step 8](#step-8--honor-cancellation)
+- **`IGStringRef` you hand the host must outlive the call** - capability strings and extensions
+  for the plugin's lifetime. [Step 2](#step-2--export-the-entry-point)
+- **Discovery is not trust** - a new plugin runs only once enabled in Settings > Plugins, which
+  pins the library's SHA-256. [Step 11](#step-11--install-and-test)
 
 
 ## Troubleshooting
