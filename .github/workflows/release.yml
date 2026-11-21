@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write   # needed to create the git tag and GitHub release
+  id-token: write   # needed for NuGet trusted publishing (OIDC)
 
 # Never run two releases at once; don't cancel a publish that's in flight.
 concurrency:
@@ -54,10 +55,16 @@ jobs:
           -p:Version=${{ inputs.version }}
           -p:GeneratePackageOnBuild=false
 
+      - name: NuGet login (trusted publishing)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}   # nuget.org profile name, not email
+
       - name: Push to NuGet.org
         run: >
           dotnet nuget push "dist/*.nupkg"
-          --api-key ${{ secrets.NUGET_API_KEY }}
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
