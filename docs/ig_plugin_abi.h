@@ -114,9 +114,11 @@ extern "C" {
  * MINOR 1 (1001000 and later) added IGHdrTransferFn_ScRgb. Emitting it to an
  * older host degrades to IGHdrTransferFn_None, so gate it on the hostAbiVersion
  * passed to ig_plugin_get_api and fall back to IGHdrTransferFn_Linear below 1001000.
+ *
+ * MINOR 3 (1003000) changed no struct or entry point; nothing needs gating on it.
  * ========================================================================= */
 
-#define IG_PLUGIN_ABI_VERSION 1002000
+#define IG_PLUGIN_ABI_VERSION 1003000
 #define IG_PLUGIN_ABI_MAJOR   1
 #define IG_PLUGIN_ENTRY_POINT_NAME "ig_plugin_get_api"
 
