@@ -72,7 +72,7 @@ event hooks and `await` `HostApi` methods – it reads like ordinary async C#.
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download)
 - A reference to the `ImageGlass.SDK` package
 - A working ImageGlass 10 install to launch the tool (it **must** be launched by the host –
   it needs the `--pipe` argument)
@@ -87,7 +87,7 @@ A tool is just a console executable that references the SDK – see
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>Preview</LangVersion>
@@ -407,7 +407,7 @@ Build the tool:
 dotnet build samples/ConsoleColorPicker/ConsoleColorPicker.csproj -c Debug
 ```
 
-The exe lands in `bin/Debug/net10.0/ConsoleColorPicker.exe`. Point your `igconfig.json`
+The exe lands in `bin/Debug/net11.0/ConsoleColorPicker.exe`. Point your `igconfig.json`
 entry's `Executable` at it, restart ImageGlass, and press the hotkey (`K`) or open a photo.
 
 **When a tool "does nothing," turn on tracing.** Set `EnableDebug = true` and provide a
@@ -449,9 +449,13 @@ if (buf is not null)
     {
         // Zero-copy read of the mapped memory…
         ReadOnlySpan<byte> pixels = buf.GetPixels();   // Stride * Height bytes
-        // …or wrap it as an SKBitmap (valid only while `buf` is alive):
-        using SKBitmap bmp = buf.ToSKBitmap();
         // buf.Width / buf.Height / buf.Stride / buf.ColorType describe the layout.
+
+        // …or wrap buf.Scan0 with your own imaging library, e.g. SkiaSharp (valid only while `buf` is alive):
+        var info = new SKImageInfo(buf.Width, buf.Height,
+            Enum.Parse<SKColorType>(buf.ColorType), SKAlphaType.Unpremul);
+        using var bmp = new SKBitmap();
+        bmp.InstallPixels(info, buf.Scan0, buf.Stride);
     }
     finally
     {

@@ -41,9 +41,9 @@ uses PNG, a decode/encode round trip through ImageGlass is lossless.
 - Leaves the animation-decode and multi-frame-encode entry points null, showing that
   each capability quadrant is independently optional
 
-Unlike a format-specific codec, the heavy lifting is delegated to **SkiaSharp**
-(the SDK's only dependency), so the plugin stays tiny and works on any platform
-SkiaSharp supports.
+Unlike a format-specific codec, the heavy lifting is delegated to **SkiaSharp**, so the
+plugin stays tiny and works on any platform SkiaSharp supports. The project pins SkiaSharp
+to the version ImageGlass ships, because the plugin runs against the host's `libSkiaSharp`.
 
 ## Build (Native AOT shared library)
 

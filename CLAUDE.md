@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`ImageGlass.SDK` is a single .NET 10 class library (`net10.0`, C# `Preview`) that defines the two public extension contracts for **ImageGlass 10**. It contains *contracts and helper base classes only* – no host implementation, no concrete plugins/tools. ImageGlass is the host; third parties consume this DLL to build extensions. There are no tests in this repo.
+`ImageGlass.SDK` is a single .NET 11 class library (`net11.0`, C# `Preview`) that defines the two public extension contracts for **ImageGlass 10**. It contains *contracts and helper base classes only* – no host implementation, no concrete plugins/tools. ImageGlass is the host; third parties consume this DLL to build extensions. There are no tests in this repo.
 
 The two extension surfaces are independent and must not be conflated:
 
@@ -16,7 +16,7 @@ The two extension surfaces are independent and must not be conflated:
 ```pwsh
 dotnet build source/ImageGlass.SDK.slnx        # or restore/pack as needed
 ```
-Platforms: `x64;ARM64;AnyCPU`. Requires the .NET 10 SDK. Only dependency is `SkiaSharp`. There is no separate lint step and no test project.
+Platforms: `x64;ARM64;AnyCPU`. Requires the .NET 11 SDK. No runtime package dependencies; `PixelBuffer` exposes `Scan0` so tools wrap pixels with whatever library they use. There is no separate lint step and no test project.
 
 ## AOT / trimming constraints (applies to ALL changes)
 

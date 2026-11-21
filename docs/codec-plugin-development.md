@@ -76,7 +76,7 @@ is `int64_t` (**not** `long`, which is 32-bit on Windows LLP64).
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download)
 - The native AOT toolchain for your platform (a C compiler/linker – on Windows the
   "Desktop development with C++" workload; on Linux/macOS `clang` and friends)
 - A reference to the `ImageGlass.SDK` package (it provides every `IG*` struct used below)
@@ -91,7 +91,7 @@ properties (`PublishAot`, `NativeLib`, `SelfContained`) turn a normal class libr
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>Preview</LangVersion>
@@ -128,6 +128,10 @@ properties (`PublishAot`, `NativeLib`, `SelfContained`) turn a normal class libr
 > The sample uses a `<ProjectReference>` to the SDK source because it lives inside this
 > repo. In your own plugin use the `<PackageReference Include="ImageGlass.SDK" />` shown
 > above instead.
+>
+> The sample also references `SkiaSharp`, which it uses to read and write the PNG inside the
+> base64 text. That is the sample's choice, not a requirement: the SDK has no dependencies,
+> and how you turn file bytes into pixels is up to you.
 
 Why each flag matters:
 
@@ -153,7 +157,6 @@ Every plugin exports exactly one C function. Its name is fixed by the SDK as
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImageGlass.SDK.Plugins;
-using SkiaSharp;
 
 namespace Base64Codec;
 
@@ -470,7 +473,7 @@ The sample shares one `DecodeInternal` for both metadata and pixels; when `outBu
 outInfo->Width        = w;
 outInfo->Height       = h;
 outInfo->PixelFormat  = (int)IGPixelFormat.Bgra8Unorm;
-outInfo->HasAlpha     = srcInfo.AlphaType == SKAlphaType.Opaque ? 0 : 1;
+outInfo->HasAlpha     = hasAlpha ? 1 : 0;   // whatever your decoder reports
 outInfo->HdrTransferFn = (int)IGHdrTransferFn.None;   // SDR
 outInfo->ColorSpace   = (int)IGColorSpace.Srgb;
 outInfo->Orientation  = 1;        // EXIF orientation, 1..8; 0 = unknown
@@ -512,9 +515,9 @@ private static IGStatus CodecDecodeStaticRaster(IGStringRef filePath, int frameI
 }
 ```
 
-The interesting part is producing the buffer. The sample lets SkiaSharp decode the embedded
-image bytes **straight into a native, host-facing buffer** it allocated with
-`NativeMemory.Alloc`:
+The interesting part is producing the buffer. Use any decoder you like – the host only sees
+the buffer. The sample uses SkiaSharp to decode the embedded image bytes **straight into a
+native, host-facing buffer** it allocated with `NativeMemory.Alloc`:
 
 ```csharp
 // 1) Read the .b64 text and base64-decode it back to the original image bytes.
@@ -565,9 +568,8 @@ Key points:
 
 - **You allocate, the host owns until it calls you back.** Fill every field of
   `IGPixelBuffer`. `Stride` must be at least `Width * bytesPerPixel`.
-- **`Bgra8Unorm` means straight (unpremultiplied) alpha.** The host maps it to
-  `SKAlphaType.Unpremul`, so writing premultiplied bytes under that tag is invisible on
-  opaque images and shows as dark halos on everything with alpha.
+- **`Bgra8Unorm` means straight (unpremultiplied) alpha.** Writing premultiplied bytes under
+  that tag is invisible on opaque images and shows as dark halos on everything with alpha.
 - **`NativeMemory.Alloc` throws `OutOfMemoryException`** instead of returning null, so a
   `== null` check after it is dead code. Let the entry point's catch map it (Step 2).
 - **`ReleaseContext`** is an opaque cookie the host hands back verbatim to your
@@ -586,9 +588,8 @@ Key points:
 ## Step 7 – Free the buffer (thread-safe!)
 
 The host calls `FreePixelBuffer` to release a buffer you returned. **This must be
-thread-safe.** ImageGlass hands your pixels to SkiaSharp via
-`SKImage.FromPixels(..., releaseDelegate, ctx)`, and Skia may invoke the release delegate
-**from any thread** when the `SKImage` is disposed.
+thread-safe.** The host releases your buffer when the image it wraps is disposed, and that
+can happen **on any thread**.
 
 ```csharp
 [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -615,8 +616,8 @@ private static void CodecFreePixelBuffer(IGPixelBuffer* buf)
 `NativeMemory.Free`, `free()`, and `CoTaskMemFree` are all thread-safe; the lock here
 protects the bookkeeping dictionary, not the free itself. The double-free guard (remove
 from the map first, bail if absent) is cheap insurance. The `catch` is not optional: the
-thread that disposes the `SKImage` can be the GC finalizer thread, and an exception leaving
-this method kills the host (Step 2).
+caller can be the GC finalizer thread, and an exception leaving this method kills the host
+(Step 2).
 
 > **The cardinal memory rule: whoever allocates, frees.** You allocate pixel and animation
 > buffers and the host calls back to release them; never free a buffer the host gave you, and
@@ -735,11 +736,15 @@ The output folder contains `Base64Codec.dll` (or `.so`/`.dylib`), the copied
 **Native dependencies resolve in the host process, not from your plugin folder.** Your
 `DllImport`s are resolved by the OS loader once ImageGlass is running, and its search order
 starts at the *ImageGlass executable's* directory – on Windows a copy sitting next to your
-library is not found. SkiaSharp works because ImageGlass already ships `libSkiaSharp` beside
-its own executable, so you can leave it out of your package (~12 MB saved). If you need a
-native dependency the host does not ship, do not rely on the plugin folder being searched:
-load it yourself by absolute path and register a `NativeLibrary.SetDllImportResolver`, or link
-it statically.
+library is not found. So do not rely on the plugin folder being searched: load a native
+dependency yourself by absolute path and register a `NativeLibrary.SetDllImportResolver`, or
+link it statically.
+
+> **Only if your plugin uses SkiaSharp** (like the sample): ImageGlass already ships
+> `libSkiaSharp` beside its own executable, so you can leave it out of your package (~12 MB
+> saved). Pin `SkiaSharp` to the host's version (4.157.x for ImageGlass 10): SkiaSharp refuses
+> a native library from another `major.minor`, and that surfaces as a type-initializer
+> exception the first time you touch it.
 
 
 ## Step 11 – Install and test
@@ -763,7 +768,7 @@ that folder – e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sampl
 %LocalAppData%\ImageGlass\_plugins\Base64Codec\
     igplugin.json           # the manifest – must be here
     Base64Codec.dll
-    libSkiaSharp.dll        # the native dependency emitted by AOT publish
+    libSkiaSharp.dll        # only because the sample uses SkiaSharp; the host ships one anyway
 ```
 
 On next launch ImageGlass scans `_plugins` and discovers the manifest. **A newly installed
@@ -915,6 +920,8 @@ instead of writing garbage.
 
 ### Static raster encode
 
+The sample PNG-encodes with SkiaSharp; any encoder works.
+
 ```csharp
 [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
 private static IGStatus CodecEncodeStaticRaster(IGStringRef destFilePath, IGPixelBuffer* source,
@@ -1041,7 +1048,7 @@ host" or "works on my machine but not in production." Each links to where it is 
   `FreePixelBuffer` / `FreeAnimationInfo`. [Step 7](#step-7--free-the-buffer-thread-safe)
 - **The encode input buffer is the host's.** Never retain it, never pass it to
   `FreePixelBuffer`. [Encoding](#the-source-buffer-belongs-to-the-host)
-- **`FreePixelBuffer` must be thread-safe** - Skia may call it from any thread on dispose.
+- **`FreePixelBuffer` must be thread-safe** - the host may call it from any thread, the finalizer included.
 - **`FreePixelBuffer` is not guaranteed to run for every buffer** - a host unload skips the
   rest, so free only in-library memory there and never external resources.
 - **Free your own allocations on the failure path** - the host only calls `FreePixelBuffer`
@@ -1067,7 +1074,7 @@ host" or "works on my machine but not in production." Each links to where it is 
 | Row says "Not loaded" while the toggle is on | The library is trusted but did not load. Hover the status for the loader's message – usually a managed assembly instead of an AOT library (Step 10), a stale contract (`StructSize` mismatch: rebuild), or quarantine. |
 | Packaged plugin never loads, no error | You zipped a `dotnet build` output. It has no `ig_plugin_get_api` export; check the size (KB = managed, MB = AOT). See Step 10. |
 | ImageGlass dies outright when opening your format | A managed exception escaped one of your entry points – uncatchable across the ABI. Guard them all (Step 2). A missing native dependency surfaces this way, as a `TypeInitializationException` on the first call that touches it. |
-| Dark halos / muddy edges on transparent images | Premultiplied pixels tagged `Bgra8Unorm`, which means straight alpha. Decode with `SKAlphaType.Unpremul`. |
+| Dark halos / muddy edges on transparent images | Premultiplied pixels tagged `Bgra8Unorm`, which means straight alpha. Decode to straight alpha, or un-premultiply before returning. |
 | Plugin loaded once, then never again | It hard-crashed the host during a previous load and was quarantined. Fix the crash, then clear `{ConfigDir}/_plugins/_quarantine/`. |
 | Host loads it but the file won't open | `CanHandleExtension` returned 0 for that extension, or a built-in codec out-bid your `DecodePriority`. Raise the priority or check the extension string (lowercase, leading dot). |
 | Crash on close / intermittent crash | `FreePixelBuffer` isn't thread-safe, or you freed a buffer you'd already freed. Use the remove-from-map-first guard. |

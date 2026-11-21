@@ -3,7 +3,7 @@
 [![Nuget](https://img.shields.io/nuget/dt/ImageGlass.SDK?color=%2300a8d6&logo=nuget)](https://www.nuget.org/packages/ImageGlass.SDK)
 
 
-The official development kit for extending **[ImageGlass](https://imageglass.org) 10**. `ImageGlass.SDK` is a single .NET 10 class library that defines the public contracts for the two ways you can extend ImageGlass.
+The official development kit for extending **[ImageGlass](https://imageglass.org) 10**. `ImageGlass.SDK` is a single .NET 11 class library that defines the public contracts for the two ways you can extend ImageGlass.
 
 
 ## What you can build
@@ -40,12 +40,12 @@ Install the package from [NuGet](https://www.nuget.org/packages/ImageGlass.SDK):
 dotnet add package ImageGlass.SDK
 ```
 
-The library targets `net10.0` and depends only on [SkiaSharp](https://github.com/mono/SkiaSharp). It is AOT- and trim-compatible, so your plugin or tool can publish with Native AOT.
+The library targets `net11.0` and has no package dependencies. It is AOT- and trim-compatible, so your plugin or tool can publish with Native AOT.
 
 
 ## Building this repository
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+Requires the [.NET 11 SDK](https://dotnet.microsoft.com/download).
 
 ```pwsh
 dotnet build source/ImageGlass.SDK.slnx

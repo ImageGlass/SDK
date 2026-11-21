@@ -4,20 +4,19 @@ Copyright (C) 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
 MIT License
 */
-using SkiaSharp;
 using System.IO.MemoryMappedFiles;
 
 namespace ImageGlass.SDK.Tools;
 
 /// <summary>
-/// Cross-process pixel data backed by a memory-mapped file.
-/// Provides safe read-only access to raw image pixels shared by the host.
+/// Read-only image pixels the host shares through a memory-mapped file.
 /// </summary>
-public sealed class PixelBuffer : IDisposable
+public sealed unsafe class PixelBuffer : IDisposable
 {
     private readonly MemoryMappedFile _mmf;
     private readonly MemoryMappedViewAccessor _view;
-    private bool _pointerAcquired;
+    private readonly byte* _scan0;
+    private bool _disposed;
 
     /// <summary>Buffer width in pixels.</summary>
     public int Width { get; }
@@ -34,6 +33,18 @@ public sealed class PixelBuffer : IDisposable
     /// <summary>Path of the backing memory-mapped file.</summary>
     public string FilePath { get; }
 
+    /// <summary>
+    /// Address of the first pixel row (rows are <see cref="Stride"/> bytes apart); valid until disposed.
+    /// </summary>
+    public nint Scan0
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return (nint)_scan0;
+        }
+    }
+
     internal PixelBuffer(string mmfPath, int width, int height, int stride, string colorType)
     {
         FilePath = mmfPath;
@@ -44,35 +55,21 @@ public sealed class PixelBuffer : IDisposable
 
         _mmf = MemoryMappedFile.CreateFromFile(mmfPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         _view = _mmf.CreateViewAccessor(0, (long)stride * height, MemoryMappedFileAccess.Read);
+
+        // Every AcquirePointer needs its own ReleasePointer, so acquire once here and release in Dispose.
+        byte* ptr = null;
+        _view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        _scan0 = ptr + _view.PointerOffset;
     }
 
 
     /// <summary>
-    /// Gets the raw pixel data as a read-only span.
+    /// Gets the raw pixel data as a read-only span (no copy).
     /// </summary>
-    public unsafe ReadOnlySpan<byte> GetPixels()
+    public ReadOnlySpan<byte> GetPixels()
     {
-        byte* ptr = null;
-        _view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-        _pointerAcquired = true;
-        return new ReadOnlySpan<byte>(ptr + _view.PointerOffset, Stride * Height);
-    }
-
-
-    /// <summary>
-    /// Creates an <see cref="SKBitmap"/> that reads directly from the mapped memory (no copy).
-    /// The returned bitmap is only valid while this <see cref="PixelBuffer"/> is alive.
-    /// </summary>
-    public unsafe SKBitmap ToSKBitmap()
-    {
-        byte* ptr = null;
-        _view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-        _pointerAcquired = true;
-
-        var info = new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
-        var bitmap = new SKBitmap();
-        bitmap.InstallPixels(info, (nint)(ptr + _view.PointerOffset), Stride);
-        return bitmap;
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return new ReadOnlySpan<byte>(_scan0, Stride * Height);
     }
 
 
@@ -81,11 +78,10 @@ public sealed class PixelBuffer : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_pointerAcquired)
-        {
-            _view.SafeMemoryMappedViewHandle.ReleasePointer();
-            _pointerAcquired = false;
-        }
+        if (_disposed) return;
+        _disposed = true;
+
+        _view.SafeMemoryMappedViewHandle.ReleasePointer();
         _view.Dispose();
         _mmf.Dispose();
     }

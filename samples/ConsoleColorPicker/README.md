@@ -19,7 +19,7 @@ inherits no console – `Console.WriteLine` alone would go nowhere. This sample
 therefore writes every line to a **log file** next to the executable:
 
 ```
-ConsoleColorPicker\bin\Debug\net10.0\ConsoleColorPicker.log
+ConsoleColorPicker\bin\Debug\net11.0\ConsoleColorPicker.log
 ```
 
 On Windows it also tries to `AllocConsole` so you can watch the output live in a
@@ -32,7 +32,7 @@ same log.
 dotnet build .\ConsoleColorPicker.csproj -c Debug
 ```
 
-The compiled exe lives in `bin\Debug\net10.0\ConsoleColorPicker.exe`.
+The compiled exe lives in `bin\Debug\net11.0\ConsoleColorPicker.exe`.
 
 > The tool **must** be launched by ImageGlass – it expects a `--pipe <name>`
 > argument. Running the exe directly logs a fatal error and exits with a

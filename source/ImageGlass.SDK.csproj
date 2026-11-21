@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <Platforms>x64;ARM64;AnyCPU</Platforms>
 
@@ -46,7 +46,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon Condition="Exists('..\icon.png')">icon.png</PackageIcon>
-    <PackageTags>ImageGlass;plugin;codec;image-viewer;sdk;tools;skiasharp</PackageTags>
+    <PackageTags>ImageGlass;plugin;codec;image-viewer;sdk;tools</PackageTags>
     <PackageReleaseNotes>https://github.com/ImageGlass/SDK/releases</PackageReleaseNotes>
 
     <PackageOutputPath>$(MSBuildProjectDirectory)\..\dist</PackageOutputPath>
@@ -76,8 +76,7 @@
 
   
   <ItemGroup>
-    <PackageReference Include="SkiaSharp" Version="3.119.4" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="11.0.100" PrivateAssets="All" />
   </ItemGroup>
 
   

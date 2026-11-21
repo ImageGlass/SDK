@@ -35,10 +35,10 @@ jobs:
         with:
           fetch-depth: 0   # full history for Source Link and release-note generation
 
-      - name: Setup .NET 10 SDK
+      - name: Setup .NET 11 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Restore
         run: dotnet restore source/ImageGlass.SDK.csproj

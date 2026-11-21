@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>Preview</LangVersion>
@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\source\ImageGlass.SDK.csproj" />
+    <!-- Resolves against the libSkiaSharp ImageGlass ships, so keep it on the host's version. -->
+    <PackageReference Include="SkiaSharp" Version="4.157.0" />
   </ItemGroup>
 
   <ItemGroup>
