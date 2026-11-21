@@ -126,7 +126,7 @@ extern "C" {
 
 typedef enum IGStatus {
     IGStatus_OK             = 0,
-    IGStatus_Unsupported    = 1, /* decline; the host falls back to a built-in */
+    IGStatus_Unsupported    = 1, /* decline; the host tries the next codec, a built-in included */
     IGStatus_Canceled       = 2,
     IGStatus_InvalidArg     = 3,
     IGStatus_DecodeFailed   = 4,
@@ -346,7 +346,7 @@ typedef struct IGCodecApi {
     IGStatus (*GetCapability)(IGCodecCapability** outCapability);
 
     int32_t  (*CanHandleExtension)(IGStringRef extension);
-    /* optional; may be NULL */
+    /* optional, may be NULL: up to the first 4096 bytes of a declared-extension file; 0 = next codec */
     int32_t  (*CanHandleSignature)(const uint8_t* signature, int32_t length);
 
     IGStatus (*LoadMetadata)(IGStringRef filePath, IGImageInfo* outImageInfo,

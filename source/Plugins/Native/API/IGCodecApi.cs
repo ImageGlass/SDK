@@ -48,9 +48,7 @@ public unsafe struct IGCodecApi
     public delegate* unmanaged[Cdecl]<IGStringRef, int> CanHandleExtension;
 
     /// <summary>
-    /// Optional content-sniffing probe. Returns 1 on match, 0 on no-match.
-    /// Signature: <c>int CanHandleSignature(byte* signature, int length)</c>.
-    /// May be null; if null the host falls back to <see cref="CanHandleExtension"/>.
+    /// Optional <c>int CanHandleSignature(byte* signature, int length)</c>: up to the first 4096 bytes of a file with a declared extension; 1 claims it, 0 hands it to the next codec, null lets the extension decide.
     /// </summary>
     public delegate* unmanaged[Cdecl]<byte*, int, int> CanHandleSignature;
 

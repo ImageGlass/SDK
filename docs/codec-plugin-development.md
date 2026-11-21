@@ -382,10 +382,15 @@ private static int CodecCanHandleExtension(IGStringRef ext)
 }
 ```
 
-Return `1` for a match, `0` otherwise. If you *can* sniff content (e.g. a format with a
-4-byte magic signature), implementing `CanHandleSignature` makes your codec robust to files
-with the wrong or missing extension. Wire it in `InitCodecApi`; leave it `null` to fall back
-to extension matching:
+Return `1` for a match, `0` otherwise.
+
+The extensions in your capability decide which files reach your codec at all. For such a file,
+the host then calls `CanHandleSignature` (when non-null) with up to the first 4096 bytes of it:
+return `1` to claim the file, `0` to hand it to the next codec, built-in ones included. Implement
+it whenever other formats share your extension (`.raw`, `.dat`, `.bin`), or your codec takes over
+files it cannot read. Keep it fast, side-effect free and thread-safe: it runs before every
+metadata load, decode and thumbnail, from any thread, often several at once. Wire it in
+`InitCodecApi`; leave it `null` to let the extension decide:
 
 ```csharp
 private static void InitCodecApi()
@@ -572,6 +577,10 @@ Key points:
   returning a failure** – the host won't call `FreePixelBuffer` for a call that didn't
   return `OK`. The full `IGStatus` set: `OK`, `Unsupported`, `Canceled`, `InvalidArg`,
   `DecodeFailed`, `OutOfMemory`, `Internal`, `NotImplemented`, `IoError`.
+- **`Unsupported` means "not my file", every other failure means "my file, but broken".**
+  When `LoadMetadata`, `DecodeStaticRaster` or `GetAnimationInfo` returns `Unsupported` (or
+  `NotImplemented`), the host tries the next codec for that file, built-in ones included. Any
+  other failure status is shown to the user as the error for that file.
 
 
 ## Step 7 – Free the buffer (thread-safe!)
