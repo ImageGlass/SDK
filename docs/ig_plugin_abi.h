@@ -356,8 +356,8 @@ typedef struct IGCodecApi {
     IGStatus (*DecodeStaticRaster)(IGStringRef filePath, int32_t frameIndex,
                                    IGPixelBuffer* outBuffer, void* cancellation);
 
-    /* MUST be thread-safe: the host hands decode buffers to Skia, which may
-     * release from any thread, including a finalizer thread. DECODE OUTPUT ONLY. */
+    /* MUST be thread-safe: the host may release decode buffers from any thread,
+     * including a finalizer thread. DECODE OUTPUT ONLY. */
     void     (*FreePixelBuffer)(IGPixelBuffer* buffer);
 
     /* --- animation decode: all three non-NULL when

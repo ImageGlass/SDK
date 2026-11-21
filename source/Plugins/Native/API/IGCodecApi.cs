@@ -80,12 +80,7 @@ public unsafe struct IGCodecApi
     /// Releases a buffer previously returned by <see cref="DecodeStaticRaster"/>
     /// or <see cref="DecodeAnimationFrame"/>.
     /// <para>
-    /// MUST be thread-safe. The host hands plugin-owned pixel buffers to SkiaSharp
-    /// via <c>SKImage.FromPixels(..., releaseDelegate, ctx)</c>; SkiaSharp may invoke
-    /// the release delegate (which calls back into <see cref="FreePixelBuffer"/>) from
-    /// any thread when the SKImage is disposed. A typical implementation forwards to
-    /// <c>free()</c>, <c>NativeMemory.Free</c>, or <c>CoTaskMemFree</c>, which are all
-    /// thread-safe.
+    /// MUST be thread-safe: the host may call it from any thread, the GC finalizer included. <c>free()</c>, <c>NativeMemory.Free</c> and <c>CoTaskMemFree</c> are all thread-safe.
     /// </para>
     /// <para>
     /// This is for DECODE output only. Never call it on a buffer the host passed IN to an

@@ -60,7 +60,7 @@ The [`samples/`](samples/) folder contains complete, runnable projects – the f
 
 | Sample | Surface | What it shows |
 | --- | --- | --- |
-| [Base64Codec](samples/Base64Codec/) | Plugin (codec) | A tiny cross-platform native codec that adds `.b64` support – reads a base64-encoded image, decodes it with SkiaSharp into a 32bpp BGRA buffer, and manages pixel-buffer memory through the ABI. Publishes as a Native AOT shared library. |
+| [Base64Codec](samples/Base64Codec/) | Plugin (codec) | A tiny cross-platform native codec that adds `.b64` support – reads and writes base64-encoded PNGs with a small built-in PNG codec (no dependencies beyond the SDK), and manages pixel-buffer memory through the ABI. Publishes as a Native AOT shared library. |
 | [ConsoleColorPicker](samples/ConsoleColorPicker/) | Tool | A console tool that connects over the named pipe, reads metadata of the current photo, follows photo navigation, and logs the RGBA value of the pixel the user clicks in the viewer via opt-in pointer events. |
 
 

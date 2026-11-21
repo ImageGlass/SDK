@@ -6,7 +6,7 @@ the smallest interesting codec: it adds support for `.b64` files.
 
 | Extension | What it does |
 | --------- | ------------ |
-| `.b64` (read)  | Reads a base64-encoded image from a text file and decodes it to a raster image |
+| `.b64` (read)  | Reads a base64-encoded PNG from a text file and decodes it to a raster image |
 | `.b64` (write) | PNG-encodes the pixels the host hands over and writes the base64 of that PNG |
 
 A `.b64` file is just a text file holding a base64 string. Two shapes are accepted
@@ -27,11 +27,12 @@ uses PNG, a decode/encode round trip through ImageGlass is lossless.
   `StructSize` it owns (`IGPluginApi`, `IGCodecApi`, `IGCodecCapability`)
 - Implements `LoadMetadata` and `DecodeStaticRaster`:
   1. `File.ReadAllText` → strip an optional `data:…;base64,` prefix
-  2. `Convert.FromBase64String` → original image bytes (PNG/JPEG/WebP/…)
-  3. `SKCodec` decodes those bytes straight into a native **32bpp unpremultiplied
+  2. `Convert.FromBase64String` → the original PNG bytes; any other format is declined
+     as `Unsupported` so another codec may take the file
+  3. `PngDecoder` decodes those bytes straight into a native **32bpp unpremultiplied
      BGRA** buffer (`IGPixelFormat.Bgra8Unorm`)
-- Implements `EncodeStaticRaster`: wraps the host's pixels with
-  `SKImage.FromPixelCopy`, PNG-encodes, base64s, and writes the text file
+- Implements `EncodeStaticRaster`: PNG-encodes the host's pixels with `PngEncoder`,
+  base64s, and writes the text file
 - Reads `IGEncodeOptions.Quality` through a `StructSize` bounds check instead of
   assuming the field is present
 - Allocates decode pixel buffers with `NativeMemory.Alloc` and releases them in a
@@ -41,9 +42,10 @@ uses PNG, a decode/encode round trip through ImageGlass is lossless.
 - Leaves the animation-decode and multi-frame-encode entry points null, showing that
   each capability quadrant is independently optional
 
-Unlike a format-specific codec, the heavy lifting is delegated to **SkiaSharp**, so the
-plugin stays tiny and works on any platform SkiaSharp supports. The project pins SkiaSharp
-to the version ImageGlass ships, because the plugin runs against the host's `libSkiaSharp`.
+The plugin depends on nothing but the SDK. [`Png.cs`](Png.cs) is a small PNG reader and
+writer on the BCL's zlib: it reads every PNG color type and bit depth, palette and `tRNS`
+transparency, and interlaced files; it writes 8-bit RGB, or RGBA when the image has alpha.
+It keeps the sample self-contained; a real codec would use whatever library suits its format.
 
 ## Build (Native AOT shared library)
 
@@ -69,7 +71,6 @@ must sit at the archive root or one folder below it; skip the `.pdb`s.
 Plugin_SampleBase64Codec.igplugin.zip
     Base64Codec.dll
     igplugin.json
-    libSkiaSharp.dll
 ```
 
 ```powershell
@@ -80,14 +81,13 @@ Compress-Archive -Path "$src/*.dll", "$src/igplugin.json" `
 
 ## Install
 
-Copy the published folder (containing the DLL, `igplugin.json`, and the native
-`libSkiaSharp` asset emitted by the AOT publish) into the host's plugins dir:
+Copy the published folder (containing the DLL and `igplugin.json`) into the host's
+plugins dir:
 
 ```text
 %LOCALAPPDATA%\ImageGlass\_plugins\Base64Codec\
     Base64Codec.dll
     igplugin.json
-    libSkiaSharp.dll
 ```
 
 On next launch the host discovers the manifest, loads the DLL, calls
@@ -95,7 +95,7 @@ On next launch the host discovers the manifest, loads the DLL, calls
 
 ## Try it
 
-Create a test file from any image:
+Create a test file from any PNG:
 
 ```powershell
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("photo.png")) `

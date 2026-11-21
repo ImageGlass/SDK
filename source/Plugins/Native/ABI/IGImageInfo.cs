@@ -71,8 +71,7 @@ public unsafe struct IGImageInfo
 
     /// <summary>
     /// Optional pointer to the source's raw ICC profile bytes. When non-null
-    /// the host prefers this over <see cref="ColorSpace"/> and builds the Skia
-    /// color space via <c>SKColorSpace.CreateIcc</c>, allowing arbitrary
+    /// the host prefers this over <see cref="ColorSpace"/> and builds the color space from it, allowing arbitrary
     /// profiles (e.g. ProPhoto RGB) that the <see cref="IGColorSpace"/> enum
     /// cannot express. The host also derives <c>ColorProfileName</c> from
     /// these bytes.

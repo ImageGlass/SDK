@@ -6,13 +6,15 @@ MIT License
 Demonstrates the IGNativeAbi with a minimal, cross-platform codec that both READS
 and WRITES a ".b64" text file.
 
-Decoding: base64-decodes the file contents back into the original image bytes
-(PNG / JPEG / WebP / ... - whatever was encoded) and decodes those bytes to 32bpp
-BGRA via SkiaSharp.
+Decoding: base64-decodes the file contents back into the original PNG bytes and
+decodes those to 32bpp BGRA with the small PNG reader in Png.cs.
 
-Encoding: takes the pixels the host hands over, PNG-encodes them with SkiaSharp,
-then writes the base64 of that PNG as text. So a decode/encode round trip through
+Encoding: takes the pixels the host hands over, PNG-encodes them with Png.cs, then
+writes the base64 of that PNG as text. So a decode/encode round trip through
 ImageGlass is lossless.
+
+Png.cs sits on the BCL's zlib, so the plugin depends on nothing but the SDK. A
+payload in another format (JPEG, WebP, ...) is declined as Unsupported.
 
 A ".b64" file is just a text file holding a base64 string. Two shapes are accepted
 on read; encoding always emits shape 1:
@@ -26,10 +28,10 @@ This codec deliberately implements only 3 of the 4 capability quadrants: static
 raster decode, static raster encode, and metadata. It leaves animation decode and
 multi-frame encode null to show that each is independently optional.
 */
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImageGlass.SDK.Plugins;
-using SkiaSharp;
 
 namespace Base64Codec;
 
@@ -158,7 +160,6 @@ internal static unsafe class Base64CodecPlugin
         }
         catch (Exception ex)
         {
-            // e.g. a missing libSkiaSharp surfaces here as a type-initializer failure
             Log(4, $"Base64Codec: LoadMetadata failed. {ex}");
             return IGStatus.Internal;
         }
@@ -238,33 +239,18 @@ internal static unsafe class Base64CodecPlugin
 
             if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
-            // 1) Wrap the host pixels and PNG-encode them. FromPixelCopy copies, so
-            //    nothing outlives the call. (PNG ignores quality; it is passed for
-            //    illustration of how options reach the encoder.)
-            var info = new SKImageInfo(source->Width, source->Height,
-                SKColorType.Bgra8888, SKAlphaType.Unpremul);
+            // PNG is lossless, so quality picks the zlib effort instead.
+            var level = quality >= 90 ? CompressionLevel.SmallestSize
+                : quality >= 50 ? CompressionLevel.Optimal
+                : CompressionLevel.Fastest;
 
-            using var image = SKImage.FromPixelCopy(info, (nint)source->Data, source->Stride);
-            if (image is null)
-            {
-                Log(4, "Base64Codec: could not wrap the source pixels.");
-                return IGStatus.EncodeFailed;
-            }
-
-            if (IsCanceled(cancellation)) return IGStatus.Canceled;
-
-            using var png = image.Encode(SKEncodedImageFormat.Png, quality);
-            if (png is null || png.Size == 0)
-            {
-                Log(4, "Base64Codec: PNG encoding produced no data.");
-                return IGStatus.EncodeFailed;
-            }
+            // 1) PNG-encode the host pixels; the encoder keeps no pointer past the call.
+            var png = PngEncoder.Encode(source->Data, source->Width, source->Height, source->Stride, level);
 
             if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
             // 2) Base64 the PNG bytes and write the text file.
-            var base64 = Convert.ToBase64String(png.AsSpan());
-            File.WriteAllText(destPath, base64);
+            File.WriteAllText(destPath, Convert.ToBase64String(png));
 
             return IGStatus.OK;
         }
@@ -339,23 +325,30 @@ internal static unsafe class Base64CodecPlugin
         if (imageBytes.Length == 0) return IGStatus.DecodeFailed;
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
-        // 2) Decode the embedded image bytes via SkiaSharp.
-        using var data = SKData.CreateCopy(imageBytes);
-        using var codec = SKCodec.Create(data);
-        if (codec == null)
+        // 2) Parse the embedded PNG. Not a PNG means "not my file", so another codec may try it.
+        if (!Png.HasSignature(imageBytes))
         {
-            Log(4, $"Base64Codec: embedded payload of '{Path.GetFileName(managedPath)}' is not a recognized image format.");
+            Log(3, $"Base64Codec: '{Path.GetFileName(managedPath)}' does not hold a PNG; this sample decodes PNG only.");
+            return IGStatus.Unsupported;
+        }
+
+        PngDecoder png;
+        try
+        {
+            png = new PngDecoder(imageBytes);
+        }
+        catch (InvalidDataException ex)
+        {
+            Log(4, $"Base64Codec: embedded PNG of '{Path.GetFileName(managedPath)}' is malformed ({ex.Message}).");
             return IGStatus.DecodeFailed;
         }
 
-        var srcInfo = codec.Info;
-        int w = srcInfo.Width, h = srcInfo.Height;
-        if (w <= 0 || h <= 0) return IGStatus.DecodeFailed;
+        int w = png.Width, h = png.Height;
 
         outInfo->Width = w;
         outInfo->Height = h;
         outInfo->PixelFormat = (int)IGPixelFormat.Bgra8Unorm;
-        outInfo->HasAlpha = srcInfo.AlphaType == SKAlphaType.Opaque ? 0 : 1;
+        outInfo->HasAlpha = png.HasAlpha ? 1 : 0;
         outInfo->HdrTransferFn = (int)IGHdrTransferFn.None;
         outInfo->ColorSpace = (int)IGColorSpace.Srgb;
         outInfo->Orientation = 1;
@@ -375,26 +368,18 @@ internal static unsafe class Base64CodecPlugin
         if (size > int.MaxValue) return IGStatus.OutOfMemory;
 
         var pixels = (byte*)NativeMemory.Alloc((nuint)size);
-        if (pixels == null) return IGStatus.OutOfMemory;
 
         try
         {
-            // Unpremul, matching what IGPixelFormat.Bgra8Unorm means to the host.
-            var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Unpremul);
-            var result = codec.GetPixels(dstInfo, (nint)pixels);
-
-            // IncompleteInput still yields a usable (partially-decoded) image.
-            if (result != SKCodecResult.Success && result != SKCodecResult.IncompleteInput)
-            {
-                NativeMemory.Free(pixels);
-                Log(4, $"Base64Codec: SKCodec.GetPixels failed ({result}).");
-                return IGStatus.DecodeFailed;
-            }
+            // Straight alpha, which is what IGPixelFormat.Bgra8Unorm means to the host.
+            png.DecodeTo(pixels, (int)stride);
         }
-        catch
+        catch (Exception ex)
         {
             NativeMemory.Free(pixels);
-            return IGStatus.Internal;
+            if (ex is OutOfMemoryException) return IGStatus.OutOfMemory;
+            Log(4, $"Base64Codec: PNG pixel data of '{Path.GetFileName(managedPath)}' is corrupt ({ex.Message}).");
+            return IGStatus.DecodeFailed;
         }
 
         outBuf->Data = pixels;

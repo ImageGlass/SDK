@@ -1,7 +1,7 @@
 {
   "id": "Plugin_SampleBase64Codec",
   "name": "Base64 Codec (sample)",
-  "description": "Sample native codec plugin that reads and writes .b64 text files: it decodes a base64-encoded image (optionally wrapped in a data URI) back into an image, and encodes an image to base64 PNG, both via SkiaSharp.",
+  "description": "Sample native codec plugin that reads and writes .b64 text files: it decodes a base64-encoded PNG (optionally wrapped in a data URI) back into an image, and encodes an image to base64 PNG, with no dependency beyond the SDK.",
   "version": "1.1.0",
   "author": "Duong Dieu Phap",
   "website": "https://imageglass.org",

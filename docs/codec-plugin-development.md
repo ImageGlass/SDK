@@ -129,9 +129,9 @@ properties (`PublishAot`, `NativeLib`, `SelfContained`) turn a normal class libr
 > repo. In your own plugin use the `<PackageReference Include="ImageGlass.SDK" />` shown
 > above instead.
 >
-> The sample also references `SkiaSharp`, which it uses to read and write the PNG inside the
-> base64 text. That is the sample's choice, not a requirement: the SDK has no dependencies,
-> and how you turn file bytes into pixels is up to you.
+> The sample needs no other package: it reads and writes the PNG inside the base64 text with
+> its own small PNG codec, [`Png.cs`](../samples/Base64Codec/Png.cs), built on the BCL's zlib.
+> How you turn file bytes into pixels is up to you.
 
 Why each flag matters:
 
@@ -473,7 +473,7 @@ The sample shares one `DecodeInternal` for both metadata and pixels; when `outBu
 outInfo->Width        = w;
 outInfo->Height       = h;
 outInfo->PixelFormat  = (int)IGPixelFormat.Bgra8Unorm;
-outInfo->HasAlpha     = hasAlpha ? 1 : 0;   // whatever your decoder reports
+outInfo->HasAlpha     = png.HasAlpha ? 1 : 0;
 outInfo->HdrTransferFn = (int)IGHdrTransferFn.None;   // SDR
 outInfo->ColorSpace   = (int)IGColorSpace.Srgb;
 outInfo->Orientation  = 1;        // EXIF orientation, 1..8; 0 = unknown
@@ -516,22 +516,18 @@ private static IGStatus CodecDecodeStaticRaster(IGStringRef filePath, int frameI
 ```
 
 The interesting part is producing the buffer. Use any decoder you like – the host only sees
-the buffer. The sample uses SkiaSharp to decode the embedded image bytes **straight into a
-native, host-facing buffer** it allocated with `NativeMemory.Alloc`:
+the buffer. The sample parses the embedded PNG with its own `PngDecoder` and decodes
+**straight into a native, host-facing buffer** it allocated with `NativeMemory.Alloc`:
 
 ```csharp
 // 1) Read the .b64 text and base64-decode it back to the original image bytes.
 var text = File.ReadAllText(managedPath);
 byte[] imageBytes = DecodeBase64Payload(text);     // strips an optional data: URI prefix
 
-// 2) Decode those bytes with SkiaSharp.
-using var data  = SKData.CreateCopy(imageBytes);
-using var codec = SKCodec.Create(data);
-if (codec == null) return IGStatus.DecodeFailed;
-
-var srcInfo = codec.Info;
-int w = srcInfo.Width, h = srcInfo.Height;
-if (w <= 0 || h <= 0) return IGStatus.DecodeFailed;
+// 2) Parse the PNG. A payload that is not PNG is "not my file", so another codec may try it.
+if (!Png.HasSignature(imageBytes)) return IGStatus.Unsupported;
+var png = new PngDecoder(imageBytes);              // throws InvalidDataException when malformed
+int w = png.Width, h = png.Height;
 
 // 3) Allocate a native BGRA8 (straight-alpha) buffer the host will own.
 ulong stride = (ulong)w * 4UL;
@@ -541,14 +537,14 @@ if (size > int.MaxValue) return IGStatus.OutOfMemory;
 // NativeMemory.Alloc throws OutOfMemoryException; it never returns null.
 var pixels = (byte*)NativeMemory.Alloc((nuint)size);
 
-var dstInfo = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Unpremul);
-var result  = codec.GetPixels(dstInfo, (nint)pixels);
-
-// IncompleteInput still yields a usable (partially-decoded) image.
-if (result != SKCodecResult.Success && result != SKCodecResult.IncompleteInput)
+try
 {
-    NativeMemory.Free(pixels);
-    return IGStatus.DecodeFailed;
+    png.DecodeTo(pixels, (int)stride);
+}
+catch (Exception ex)
+{
+    NativeMemory.Free(pixels);   // the host frees nothing from a failed call
+    return ex is OutOfMemoryException ? IGStatus.OutOfMemory : IGStatus.DecodeFailed;
 }
 
 // 4) Describe the buffer for the host.
@@ -676,7 +672,7 @@ discover the plugin – see [`igplugin.json`](../samples/Base64Codec/igplugin.js
 {
   "id": "Plugin_SampleBase64Codec",        // required, unique
   "name": "Base64 Codec (sample)",         // required, shown in menus
-  "description": "Decodes a .b64 base64-encoded image via SkiaSharp.",
+  "description": "Reads and writes .b64 base64-encoded PNG images.",
   "version": "1.0.0",
   "author": "Duong Dieu Phap",
   "website": "https://imageglass.org",
@@ -724,14 +720,13 @@ dotnet publish samples/Base64Codec/Base64Codec.csproj \
 ```
 
 The output folder contains `Base64Codec.dll` (or `.so`/`.dylib`), the copied
-`igplugin.json`, and any native dependency the AOT publish emitted (for this sample,
-`libSkiaSharp`).
+`igplugin.json`, and any native dependency the AOT publish emitted (the sample has none).
 
 > **Ship the published library, never a `dotnet build` output.** A plain build emits the
 > *managed* assembly under `bin/<config>/<tfm>/`, with the same file name and no
 > `ig_plugin_get_api` export. The host loads that file successfully, fails to resolve the
 > export, and skips the plugin – which looks exactly like "my plugin is ignored". The tell is
-> size: an AOT library is megabytes (this sample, ~1.6 MB), a managed assembly is a few KB.
+> size: an AOT library is megabytes (this sample, ~1.4 MB), a managed assembly is a few KB.
 
 **Native dependencies resolve in the host process, not from your plugin folder.** Your
 `DllImport`s are resolved by the OS loader once ImageGlass is running, and its search order
@@ -739,12 +734,6 @@ starts at the *ImageGlass executable's* directory – on Windows a copy sitting 
 library is not found. So do not rely on the plugin folder being searched: load a native
 dependency yourself by absolute path and register a `NativeLibrary.SetDllImportResolver`, or
 link it statically.
-
-> **Only if your plugin uses SkiaSharp** (like the sample): ImageGlass already ships
-> `libSkiaSharp` beside its own executable, so you can leave it out of your package (~12 MB
-> saved). Pin `SkiaSharp` to the host's version (4.157.x for ImageGlass 10): SkiaSharp refuses
-> a native library from another `major.minor`, and that surfaces as a type-initializer
-> exception the first time you touch it.
 
 
 ## Step 11 – Install and test
@@ -768,7 +757,6 @@ that folder – e.g. `configdir/_plugins/my_codec/igplugin.json`. For this sampl
 %LocalAppData%\ImageGlass\_plugins\Base64Codec\
     igplugin.json           # the manifest – must be here
     Base64Codec.dll
-    libSkiaSharp.dll        # only because the sample uses SkiaSharp; the host ships one anyway
 ```
 
 On next launch ImageGlass scans `_plugins` and discovers the manifest. **A newly installed
@@ -777,7 +765,7 @@ must enable it there. Enabling pins the library's SHA-256; only then does the ho
 DLL, call `ig_plugin_get_api`, and register `plugin.base64.codec` for `.b64`. If you later
 rebuild or replace the DLL, its hash no longer matches and the host prompts you to re-enable it.
 
-Make a test file from any image and open it:
+Make a test file from any PNG and open it:
 
 ```pwsh
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("photo.png")) `
@@ -920,7 +908,7 @@ instead of writing garbage.
 
 ### Static raster encode
 
-The sample PNG-encodes with SkiaSharp; any encoder works.
+The sample PNG-encodes with its own `PngEncoder`; any encoder works.
 
 ```csharp
 [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -938,18 +926,15 @@ private static IGStatus CodecEncodeStaticRaster(IGStringRef destFilePath, IGPixe
 
         if (IsCanceled(cancellation)) return IGStatus.Canceled;
 
-        var info = new SKImageInfo(source->Width, source->Height,
-            SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        // PNG is lossless, so quality picks the zlib effort instead.
+        var level = quality >= 90 ? CompressionLevel.SmallestSize
+            : quality >= 50 ? CompressionLevel.Optimal
+            : CompressionLevel.Fastest;
 
-        // FromPixelCopy copies, so nothing outlives the call.
-        using var image = SKImage.FromPixelCopy(info, (nint)source->Data, source->Stride);
-        if (image is null) return IGStatus.EncodeFailed;
-
-        using var png = image.Encode(SKEncodedImageFormat.Png, quality);
-        if (png is null || png.Size == 0) return IGStatus.EncodeFailed;
+        var png = PngEncoder.Encode(source->Data, source->Width, source->Height, source->Stride, level);
 
         // File.WriteAllText writes and closes in one go.
-        File.WriteAllText(destPath, Convert.ToBase64String(png.AsSpan()));
+        File.WriteAllText(destPath, Convert.ToBase64String(png));
         return IGStatus.OK;
     }
     catch (IOException) { return IGStatus.IoError; }
